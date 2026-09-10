@@ -117,6 +117,8 @@ output_template:
 
 # ------------------------------------------------------------------------------
 # DOWNLOAD DEFAULTS — persistent `dl` flags (CLI flag beats these).
+# Precedence (highest first): CLI flag -> services.<TAG>.dl (per-service, see
+# the SERVICES section below) -> this global `dl` block -> built-in default.
 # Config key = flag long name with dashes -> underscores. Internal names:
 #   range (=-r), list (=--list), tmdb_id, imdb_id, anilist_id, no_atmos,
 #   output_dir (=-o), cdm_only (--cdm-only/--vaults-only).
@@ -243,9 +245,10 @@ output_template:
 # ------------------------------------------------------------------------------
 # DRM & CDM
 # ------------------------------------------------------------------------------
-# cdm — service tag -> device. `default` is the fallback. Resolution order:
-#   dl --cdm override > per-service > default. Values can be nested dicts for
-#   quality ("1080", ">=1080"), DRM system (widevine/playready), or profile.
+# cdm — keyed PER SERVICE TAG, with `default` as the fallback. Resolution order:
+#   dl --cdm override > per-service entry > default. A value can be a device
+#   name (string) or a nested dict for quality ("1080", ">=1080"), DRM system
+#   (widevine/playready), or credential profile.
 # cdm:
 #   default: chromecdm_l3
 #   EXAMPLE2: android_l1

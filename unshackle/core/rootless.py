@@ -116,7 +116,9 @@ def rootless_check() -> dict:
     except (ImportError, OSError, ValueError):
         pass
 
-    log.info(
+    # Resolved paths are visible on demand via `unshackle env check`/`env info`;
+    # keep them out of normal startup output (debug-only).
+    log.debug(
         "Environment: %s (uid=%s) - config=%s, data=%s, cache=%s, downloads=%s",
         "rootless" if facts["rootless_mode"] else "root",
         facts.get("uid"),

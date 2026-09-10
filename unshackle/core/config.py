@@ -24,7 +24,12 @@ def resolve_cdm_name(cdm: dict, service: str, override: Any = None) -> Any:
 
 class Config:
     class _Directories:
-        # default directories, do not modify here, set via config
+        # Default directories. These are only fallbacks: any path a user sets in
+        # unshackle.yaml overrides the matching entry (see Config.__init__).
+        # Writable runtime data now defaults to XDG user dirs, so a rootless/seedbox
+        # install never tries to write into the (possibly read-only) installed package.
+        # Code locations (commands/services/vaults/fonts/core_dir/namespace_dir) stay
+        # package-relative: they point at the code, not at writable state.
         app_dirs = AppDirs("unshackle", False)
         core_dir = Path(__file__).resolve().parent
         namespace_dir = core_dir.parent
@@ -32,11 +37,11 @@ class Config:
         services = [namespace_dir / "services"]
         vaults = namespace_dir / "vaults"
         fonts = namespace_dir / "fonts"
-        user_configs = core_dir.parent
-        data = core_dir.parent
-        downloads = core_dir.parent.parent / "downloads"
-        temp = core_dir.parent.parent / "temp"
-        cache = data / "cache"
+        user_configs = Path(app_dirs.user_config_dir)  # ~/.config/unshackle
+        data = Path(app_dirs.user_data_dir)  # ~/.local/share/unshackle
+        downloads = Path.home() / "unshackle" / "downloads"  # ~/unshackle/downloads
+        temp = Path(app_dirs.user_cache_dir) / "temp"  # ~/.cache/unshackle/temp
+        cache = Path(app_dirs.user_cache_dir)  # ~/.cache/unshackle
         cookies = data / "cookies"
         logs = data / "logs"
         exports = data / "exports"
@@ -130,6 +135,10 @@ class Config:
         self.update_checks: bool = kwargs.get("update_checks", True)
         self.services_repo_force: bool = bool(kwargs.get("services_repo_force", False))
         self.update_check_interval: int = kwargs.get("update_check_interval", 24)
+        # Optional cap (bytes) on the temporary-work directory; 0 disables. When set,
+        # the task temp dir is trimmed (oldest first) before each download task, so a
+        # seedbox disk quota is never silently exhausted by leftover scratch files.
+        self.temp_max_bytes: int = kwargs.get("temp_max_bytes", 0)
         # mask local base dirs (install root/venv/home) in logged paths; False shows full paths
         self.redact_paths: bool = kwargs.get("redact_paths", True)
         self.continue_downloads: bool = kwargs.get("continue_downloads", False)

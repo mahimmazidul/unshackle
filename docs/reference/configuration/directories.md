@@ -2,8 +2,11 @@
 
 The `directories` config key is a **dict** mapping directory names to filesystem paths.
 unshackle honours only the names listed below. A handful are **protected** and you cannot
-move them, and unshackle silently ignores an override of one. unshackle computes all
-defaults relative to the installed package, and passes every user-settable path through
+move them, and unshackle silently ignores an override of one. Writability-friendly defaults
+under the user's home (`~/.config/unshackle`, `~/.local/share/unshackle`, `~/.cache/unshackle`)
+are used for every key you leave unset, so the same install runs both rootless (seedbox)
+and as root; only code locations (`commands`, `services`, `vaults`, `fonts`, `core_dir`,
+`namespace_dir`) stay package-relative. Every user-settable path goes through
 `Path(...).expanduser()`, so `~` works.
 
 ```yaml title="unshackle.yaml"
@@ -16,9 +19,9 @@ directories:
 
 | Key | Type | Default | Overridable | Purpose |
 |-----|------|---------|:-----------:|---------|
-| `downloads` | path | `<repo>/downloads` | Yes | Default output directory for finished files. |
-| `temp` | path | `<repo>/temp` | Yes | Temporary working files during download/decrypt/mux. |
-| `cache` | path | `<data>/cache` | Yes | Generic cache, title cache, and the update-check store. |
+| `downloads` | path | `~/unshackle/downloads` | Yes | Default output directory for finished files. |
+| `temp` | path | `~/.cache/unshackle/temp` | Yes | Temporary working files during download/decrypt/mux. |
+| `cache` | path | `~/.cache/unshackle` | Yes | Generic cache, title cache, and the update-check store. |
 | `cookies` | path | `<data>/cookies` | Yes | Per-service cookie files (and VPN cookie files). |
 | `logs` | path | `<data>/logs` | Yes | Log files. |
 | `exports` | path | `<data>/exports` | Yes | Export JSON files. |
@@ -29,8 +32,8 @@ directories:
 | `services` | list \| path | `[unshackle/services]` | Yes | Service search paths and/or remote repo specs (see below). |
 | `vaults` | path | `unshackle/vaults` | Yes | Vault backend modules. |
 | `fonts` | path | `unshackle/fonts` | Yes | Bundled fonts. |
-| `user_configs` | path | `unshackle/` | No protected | Where `unshackle.yaml` lives. |
-| `data` | path | `unshackle/` | No protected | Base for the data subdirectories above. |
+| `user_configs` | path | `~/.config/unshackle` | No protected | Where `unshackle.yaml` lives. |
+| `data` | path | `~/.local/share/unshackle` | No protected | Base for the data subdirectories above. |
 | `core_dir` | path | `unshackle/core` | No protected | Package core. |
 | `namespace_dir` | path | `unshackle/` | No protected | Package root. |
 | `app_dirs` | - | `AppDirs("unshackle", False)` | No protected | Internal AppDirs instance. |
@@ -88,6 +91,17 @@ directories:
     If the services directory lives inside the installed package, a reinstall can delete the
     `_repos` clones. They are re-cloned on next use. On **read-only installs** you must
     point `services` at a writable path, or cloning will fail.
+
+## Temp quota { #temp-quota }
+
+Set the optional top-level `temp_max_bytes` key to cap the temporary-work directory. When
+set, unshackle prunes the oldest entries in `directories.temp` (skipping the task dirs of
+running downloads) before each task, so a long session can't silently fill a seedbox disk
+quota. `0` (the default) disables the cap.
+
+```yaml
+temp_max_bytes: 10737418240   # 10 GiB
+```
 
 ## Filenames { #filenames }
 

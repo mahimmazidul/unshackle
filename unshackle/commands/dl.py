@@ -415,7 +415,10 @@ class dl:
         if suggestions := suggest_font_packages(missing_fonts):
             self.log.info("Install font packages to improve subtitle rendering:")
             for package_cmd, fonts in suggestions.items():
-                self.log.info(f"  $ sudo apt install {package_cmd}")
+                self.log.info(
+                    f"  $ apt install {package_cmd}   "
+                    f"(no root? ask your seedbox admin, or drop the fonts in ~/.fonts)"
+                )
                 self.log.info(f"    → Provides: {', '.join(fonts)}")
 
     def generate_sidecar_subtitle_path(

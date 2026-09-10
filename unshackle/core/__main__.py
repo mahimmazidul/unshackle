@@ -1,6 +1,7 @@
 import atexit
 import logging
 import sys
+import threading
 from datetime import datetime
 
 import click
@@ -16,6 +17,7 @@ from unshackle.core.commands import Commands
 from unshackle.core.config import config
 from unshackle.core.console import ComfyRichHandler, console
 from unshackle.core.constants import context_settings
+from unshackle.core.rootless import rootless_check
 from unshackle.core.update_checker import UpdateChecker
 from unshackle.core.utilities import close_debug_logger, init_debug_logger
 
@@ -56,6 +58,8 @@ def main(version: bool, debug: bool) -> None:
     if "serve" in sys.argv[1:]:
         serve_args = sys.argv[sys.argv.index("serve") + 1 :]
         if "--quiet" in serve_args or "-q" in serve_args:
+            # Headless serve: no banner, but still prepare rootless paths and tempfile.
+            rootless_check()
             return
 
     console.print(
@@ -69,8 +73,9 @@ def main(version: bool, debug: bool) -> None:
                     r" ▀▀▀ ▀▀ █▪ ▀▀▀▀ ▀▀▀ · ▀  ▀ ·▀▀▀ ·▀  ▀.▀▀▀  ▀▀▀ ",
                     style="ascii.art",
                 ),
+                Text("Modified for rootless servers by Paw", style="italic dim", justify="center"),
                 f"v [repr.number]{__version__}[/]{f' ({__code_hash__})' if __code_hash__ else ''}"
-                f" - © 2025-{datetime.now().year} - github.com/unshackle-dl/unshackle",
+                f" - © 2025-{datetime.now().year} - github.com/mahimmazidul/unshackle",
             ),
             (1, 11, 1, 10),
             expand=True,
@@ -78,24 +83,34 @@ def main(version: bool, debug: bool) -> None:
         justify="center",
     )
 
+    # Detect the environment (root vs rootless), create the writable directories, and
+    # redirect tempfile work off the shared /tmp. Never raises. Runs after the banner so
+    # startup output stays clean.
+    rootless_check()
+
     if version:
         return
 
     if config.update_checks:
-        try:
-            latest_version = UpdateChecker.check_for_updates_sync(__version__)
-            if latest_version:
-                console.print(
-                    f"\n[yellow]Update available![/yellow] "
-                    f"Current: {__version__} → Latest: [green]{latest_version}[/green]",
-                    justify="center",
-                )
-                console.print(
-                    "Visit: https://github.com/unshackle-dl/unshackle/releases/latest\n",
-                    justify="center",
-                )
-        except Exception:
-            pass
+        def _check_for_updates() -> None:
+            # Run off the main thread so a cold update-check cache (up to ~5 s of
+            # network I/O) never delays startup. Prints when the result is ready.
+            try:
+                latest_version = UpdateChecker.check_for_updates_sync(__version__)
+                if latest_version:
+                    console.print(
+                        f"\n[yellow]Update available![/yellow] "
+                        f"Current: {__version__} → Latest: [green]{latest_version}[/green]",
+                        justify="center",
+                    )
+                    console.print(
+                        "Visit: https://github.com/unshackle-dl/unshackle/releases/latest\n",
+                        justify="center",
+                    )
+            except Exception:
+                pass
+
+        threading.Thread(target=_check_for_updates, name="unshackle-update-check", daemon=True).start()
 
 
 @atexit.register

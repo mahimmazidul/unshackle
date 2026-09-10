@@ -74,7 +74,9 @@ def repos_base() -> Path:
     for entry in entries:
         if not (isinstance(entry, str) and is_repo_spec(entry)):
             return Path(entry).expanduser() / "_repos"
-    return Config._Directories.namespace_dir / "services" / "_repos"
+    # Fallback: no local services dir configured, so clones go to a user-writable
+    # cache dir (rootless-safe) instead of inside the installed package.
+    return Path(Config._Directories.app_dirs.user_cache_dir) / "services" / "_repos"
 
 
 def resolve_service_repo(spec: str, *, ttl: int = DEFAULT_TTL, force: bool = False) -> Optional[Path]:

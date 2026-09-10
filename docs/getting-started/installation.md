@@ -200,6 +200,23 @@ If no configuration file exists yet, this command lists the locations unshackle
 searches for one, so you know where to make it. See the
 [configuration guide](configuration-file.md) for the details of that file.
 
+## Rootless / seedbox installs
+
+unshackle runs without root, systemd, cron, or privileged ports. On a shared/seedbox host,
+install the external tools by asking your provider (or place static binaries under
+`~/bin`), then install unshackle as your own user — `uv` installs into `~/.local/bin`:
+
+```shell
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install git+https://github.com/unshackle-dl/unshackle.git
+```
+
+Writable paths (config, cache, logs, devices, downloads) default to your home directory
+and are created automatically; override any of them in `unshackle.yaml` as usual. To run
+the REST/CDM server without systemd, use the bundled `start.sh` / `stop.sh` (or
+`tmux`/`pm2`). See **ROOTLESS_SETUP.md** at the repository root for the full guide,
+including default paths, port notes, and seedbox-specific tips (quota, `/tmp`, NFS locks).
+
 ## Next steps
 
 - Set up your [configuration](configuration-file.md) file (`unshackle.yaml`).

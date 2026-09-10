@@ -686,6 +686,9 @@ def get_unix_fonts() -> dict[str, Path]:
     log = logging.getLogger("get_system_fonts")
     fonts = {}
 
+    # Read-only system font locations (looked up, never written). They are skipped
+    # when absent, and user-local dirs are scanned too, so a rootless/seedbox install
+    # still finds fonts without touching system paths.
     font_dirs = [
         Path("/usr/share/fonts"),
         Path("/usr/local/share/fonts"),

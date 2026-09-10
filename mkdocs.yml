@@ -12,6 +12,7 @@ theme:
   name: material
   custom_dir: overrides
   favicon: assets/favicon.svg
+  logo: assets/logo.png
   icon:
     logo: custom/no_encryption
   palette:

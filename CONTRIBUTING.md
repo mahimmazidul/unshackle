@@ -11,7 +11,7 @@ UV installation instructions should be followed from the UV Docs: https://docs.a
 1. Clone the Repository:
 
    ```shell
-   git clone https://github.com/unshackle-dl/unshackle
+   git clone https://github.com/mahimmazidul/unshackle
    cd unshackle
    ```
 

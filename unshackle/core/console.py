@@ -265,6 +265,27 @@ class ComfyConsole(Console):
         Returns:
             Status: A Status object you can use as a context manager.
         """
+        # The shared console is pinned to 80 columns so logs and progress stay compact,
+        # but a narrower "portrait" terminal would wrap the padded status line onto a
+        # second row, and the transient redraw only erases the last row, leaving the
+        # wrapped row behind. Clamp the status render to the real terminal width and
+        # shorten the message so it always stays on a single row.
+        try:
+            terminal_columns = shutil.get_terminal_size().columns
+        except OSError:
+            terminal_columns = self.width
+        render_width = min(self.width, terminal_columns) if terminal_columns and terminal_columns > 0 else self.width
+
+        top, right, bottom, left = Padding.unpack(pad)
+
+        if isinstance(status, str):
+            # Reserve the spinner frame (1 cell) + its space, plus the horizontal pad.
+            max_message = render_width - 1 - 1 - left - right
+            if max_message < 1:
+                max_message = 1
+            if len(status) > max_message:
+                status = status[: max_message - 1].rstrip() + "…"
+
         status_renderable = super().status(
             status=status,
             spinner=spinner,
@@ -274,16 +295,14 @@ class ComfyConsole(Console):
         )
 
         if pad:
-            top, right, bottom, left = Padding.unpack(pad)
-
-            renderable_width = len(status_renderable.status)
-            spinner_width = len(status_renderable.renderable.text)
-            status_width = spinner_width + renderable_width
-
-            available_width = self.width - status_width
+            # Frame + space + message is the true rendered width of the status.
+            status_width = 1 + 1 + len(status_renderable.status)
+            available_width = render_width - status_width
             if available_width > right:
                 # fill up the available width with padding to apply bg color
                 right = available_width - right
+            else:
+                right = max(0, available_width)
 
             padding = Padding(status_renderable, (top, right, bottom, left))
 

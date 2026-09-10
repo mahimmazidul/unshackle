@@ -73,11 +73,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/unshackle-dl/unshackle"
-Repository = "https://github.com/unshackle-dl/unshackle"
-Issues = "https://github.com/unshackle-dl/unshackle/issues"
-Discussions = "https://github.com/unshackle-dl/unshackle/discussions"
-Changelog = "https://github.com/unshackle-dl/unshackle/blob/master/CHANGELOG.md"
+Homepage = "https://github.com/mahimmazidul/unshackle"
+Repository = "https://github.com/mahimmazidul/unshackle"
+Issues = "https://github.com/mahimmazidul/unshackle/issues"
+Discussions = "https://github.com/mahimmazidul/unshackle/discussions"
+Changelog = "https://github.com/mahimmazidul/unshackle/blob/dev/CHANGELOG.md"
 
 [project.scripts]
 unshackle = "unshackle.core.__main__:main"

@@ -383,32 +383,54 @@ output_template:
 # ------------------------------------------------------------------------------
 # SERVICES & AUTHENTICATION
 # ------------------------------------------------------------------------------
-# services — per-service config keyed by canonical tag. Well-known sub-keys:
-#   proxy_map (region remap), title_map (exact rename), dl (per-service defaults).
+# Service tags are the canonical names of the installed streaming services.
+# Find your tags with:  `unshackle dl --help`  (each service is a subcommand).
+# Tags are case-insensitive and each service honours its own aliases.
+# EXAMPLE1 / EXAMPLE2 below are placeholders — swap them for your real tags.
+
+# services — per-service config keyed by the canonical service tag.
+# Well-known sub-keys: proxy_map, title_map, dl. A service may also read any
+# extra keys it defines; this block is merged over its own config.yaml.
 # services:
 #   EXAMPLE1:
+#     # Remap the region you pass to -p/--proxy, for this service only.
 #     proxy_map:
-#       us: us-nyc
-#       "nordvpn:ca": ca-toronto
+#       us: us-nyc                  #  -p us            -> ask provider for us-nyc
+#       "nordvpn:ca": ca-toronto    #  -p nordvpn:ca    -> ca-toronto
+#                                   #  (quote "provider:query" keys — they contain ":")
+#     # Exact rename of fetched titles (source name -> your library's name).
 #     title_map:
 #       "My Show: The Movie": "My Show Presents The Movie"
+#     # Per-service download defaults — same keys as the global `dl` block,
+#     # layered over it (these win for this service).
 #     dl:
 #       lang: [en, ja]
 #       range: [DV]
+#       slow: "10-30"
+#   EXAMPLE2:
+#     dl:
+#       lang: [de]
+#       no_attachments: true
 
-# credentials — per-service logins: "username:password[:extra]", a list, or a
-# dict of profile name -> credential (`-p/--profile` selects; `default` wins).
+# credentials — per-service logins: a "username:password[:extra]" string, a
+# [username, password] list, or a dict of profile name -> credential.
+# `-p/--profile` selects a profile; `default` is used when you give none.
+# QUOTE the string if your password contains ":", "#", or spaces.
 # credentials:
-#   EXAMPLE2: user@example.com:hunter2
+#   EXAMPLE2: "user@example.com:hunter2"     # single login for the service
 #   EXAMPLE1:
-#     default: primary@example.com:pw1
-#     second: secondary@example.com:pw2
+#     default: "primary@example.com:pw1"     # used with no -p, or a missing profile
+#     second: "secondary@example.com:pw2"    # used with -p second
 
 # firefox_cookies — pull cookies straight from a local Firefox profile (read-only).
 # firefox_cookies:
 #   EXAMPLE1:
 #     hosts: [example.com, .cdn.example.com]
 #     local_storage: false       # also read webappsstore.sqlite
+#
+# Note: services, credentials, cdm and firefox_cookies all key off the SAME
+# service tag, so one tag pulls in all of its settings at once. Keep each
+# top-level key (services, credentials, cdm, ...) defined only ONCE in the file.
 
 # remote_services — remote unshackle servers for `dl --remote`.
 # remote_services:

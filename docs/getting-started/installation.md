@@ -85,6 +85,24 @@ uv run unshackle env check
     `uv sync --group dev --group test` inside the clone. End users can ignore
     these entirely.
 
+### Installing in a plain virtualenv
+
+`uv` is the recommended tool, but a manual `venv` works too and keeps unshackle
+and its dependencies out of your system Python:
+
+```shell title="Manual venv"
+git clone https://github.com/mahimmazidul/unshackle.git
+cd unshackle
+python3 -m venv .venv
+source .venv/bin/activate         # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install -e .
+unshackle --help
+```
+
+Activate the environment (`source .venv/bin/activate`) before running
+`unshackle`, or call `.venv/bin/unshackle` directly.
+
 ## External tools on your PATH
 
 unshackle shells out to a number of external command-line programs for media

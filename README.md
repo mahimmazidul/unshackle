@@ -60,6 +60,24 @@ unshackle --help
 > [!TIP]
 > Prefer `uv run unshackle ...` inside a clone to keep the virtual environment active.
 
+### Manual virtualenv (no uv)
+
+`uv` is the recommended path, but a plain Python `venv` works too and keeps
+unshackle's dependencies out of your system Python:
+
+```shell
+git clone https://github.com/mahimmazidul/unshackle.git
+cd unshackle
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install -e .                 # editable install into the venv
+unshackle --help
+```
+
+`unshackle` lives inside `.venv/bin` — run it after `source .venv/bin/activate`,
+or call `.venv/bin/unshackle` directly.
+
 ### Requirements
 
 | Requirement | Version | Needed for |

@@ -104,7 +104,7 @@ def main(version: bool, debug: bool) -> None:
                         justify="center",
                     )
                     console.print(
-                        "Visit: https://github.com/unshackle-dl/unshackle/releases/latest\n",
+                        "Visit: https://github.com/mahimmazidul/unshackle/releases/latest\n",
                         justify="center",
                     )
             except Exception:

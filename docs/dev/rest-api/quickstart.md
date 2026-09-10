@@ -16,7 +16,7 @@ You need a working unshackle install with services and CDM devices already confi
 === "Installed as a tool"
 
     ```shell
-    uv tool install git+https://github.com/unshackle-dl/unshackle.git
+    uv tool install git+https://github.com/mahimmazidul/unshackle.git
     unshackle --help
     ```
 

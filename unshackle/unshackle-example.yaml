@@ -1,27 +1,78 @@
-# unshackle configuration (copy to unshackle.yaml)
+# ==============================================================================
+#  unshackle — reference configuration (example)
 #
-# This is a MINIMAL starter. Every option has a sane default, so unshackle runs
-# even with most of this file empty or removed.
+#  Copy this file to `unshackle.yaml` and keep only what you need:
 #
-# The full, canonical configuration reference lives in docs/. Start at
-# docs/README.md. Each section below points to the doc that documents it.
+#      mkdir -p ~/.config/unshackle
+#      cp unshackle-example.yaml ~/.config/unshackle/unshackle.yaml
+#
+#  Everything except `output_template` is COMMENTED OUT as a placeholder — copy
+#  the file, uncomment what you want, and fill in real values. unshackle runs
+#  entirely on defaults when a key is missing, and only `output_template` is
+#  required by `dl` (so it ships active below). Every key, its type, and its
+#  default is documented in docs/reference/configuration/ — this file mirrors
+#  that reference.
+#
+#  Modified for rootless servers by Paw.
+# ==============================================================================
 
-# Group or username appended to download filenames after a dash.
-tag: "NOGRP"
 
-# Conditionally swap the tag above based on filename variables (first match wins).
-# See docs/reference/configuration.md#tag_rules for conditions and semantics.
-# tag_rules:
-#   - when: {lang_tag: SUBBED}
-#     tag: SUBGRP
+# ------------------------------------------------------------------------------
+# DIRECTORIES — where everything is read and written.
+# Writable paths default to your home dir (rootless/seedbox safe) and are created
+# automatically. `~` is expanded. These five are PROTECTED and cannot be moved:
+#   user_configs, data, core_dir, namespace_dir, app_dirs.
+# ------------------------------------------------------------------------------
+# directories:
+#   downloads: ~/unshackle/downloads        # finished files (default ~/unshackle/downloads)
+#   temp: ~/.cache/unshackle/temp           # scratch space during download/decrypt/mux
+#   cache: ~/.cache/unshackle               # title cache + update-check store
+#   cookies: ~/.local/share/unshackle/cookies   # per-service cookie files
+#   logs: ~/.local/share/unshackle/logs     # log files
+#   exports: ~/.local/share/unshackle/exports   # export JSONs
+#   wvds: ~/.local/share/unshackle/WVDs     # Widevine devices (.wvd)
+#   prds: ~/.local/share/unshackle/PRDs     # PlayReady devices (.prd)
+#   dcsl: ~/.local/share/unshackle/DCSL     # DCSL data
+#   commands: unshackle/commands            # CLI command modules
+#   vaults: unshackle/vaults                # vault backend modules
+#   fonts: unshackle/fonts                  # bundled fonts
+#
+#   # `services` is special: a LIST of local dirs and/or git repo specs.
+#   # First source to define a tag wins; list local dirs last as fallback.
+#   #   services:
+#   #     - you/your-services               # owner/repo shorthand (cloned from GitHub)
+#   #     - https://example.com/private.git@stable
+#   #     - ~/code/local-services           # local, lowest priority
+#
+#   # Quota guard: cap the temp dir (bytes). 0 = unlimited (default).
+# temp_max_bytes: 10737418240              # 10 GiB, oldest entries pruned first
 
-# --- Output filename & folder templates --- docs/guide/output-and-naming.md
-# The full variable list and all naming options are documented there.
-# movies/series have no built-in fallback (define them to download those kinds);
-# songs falls back to "{track_number}. {title}". Conditional variables take a
-# ? suffix, e.g. {year?}.
+
+# ------------------------------------------------------------------------------
+# FILENAMES — templates for unshackle's own files. Rarely needed.
+# ------------------------------------------------------------------------------
+# filenames:
+#   log: "unshackle_{name}_{time}.log"
+#   debug_log: "unshackle_debug_{service}_{time}.jsonl"
+#   config: "config.yaml"
+#   root_config: "unshackle.yaml"
+#   chapters: "Chapters_{title}_{random}.txt"
+#   subtitle: "Subtitle_{id}_{language}.srt"
+
+
+# ------------------------------------------------------------------------------
+# OUTPUT & NAMING
+# ------------------------------------------------------------------------------
+#
+# output_template — REQUIRED for `dl`. Filename templates by media kind.
+# A trailing `?` marks a variable optional. The nested `folder` key sets
+# per-title subfolders (a str sets one template for everything).
+# Variables: title, year, season, episode, season_episode, episode_name, part,
+#   absolute, date, quality, resolution, source, tag, track_number, artist,
+#   album_artist, album, disc, track_total, disc_total, release_type, genre,
+#   explicit, isrc, upc, label, audio, audio_channels, audio_full, atmos, dual,
+#   multi, dubbed, video, hdr, hfr, edition, repack, lang_tag, title_type.
 output_template:
-  # Scene-style naming (dot-separated)
   movies: "{title}.{year?}.{repack?}.{edition?}.{lang_tag?}.{quality}.{source}.WEB-DL.{dual?}.{multi?}.{dubbed?}.{audio_full}.{atmos?}.{hdr?}.{hfr?}.{video}-{tag}"
   series: "{title}.{year?}.{season_episode}.{episode_name?}.{repack?}.{edition?}.{lang_tag?}.{quality}.{source}.WEB-DL.{dual?}.{multi?}.{dubbed?}.{audio_full}.{atmos?}.{hdr?}.{hfr?}.{video}-{tag}"
   songs: "{track_number}.{title}.{repack?}.{edition?}.{lang_tag?}.{source?}.WEB-DL.{audio_full}.{atmos?}-{tag}"
@@ -29,36 +80,462 @@ output_template:
     movies: "{title}.{year?}.{repack?}.{edition?}.{lang_tag?}.{quality}.{source}.WEB-DL.{dual?}.{multi?}.{dubbed?}.{audio_full}.{atmos?}.{hdr?}.{hfr?}.{video}-{tag}"
     series: "{title}.{year?}.{repack?}.{edition?}.{lang_tag?}.{quality}.{source}.WEB-DL.{dual?}.{multi?}.{dubbed?}.{audio_full}.{atmos?}.{hdr?}.{hfr?}.{video}-{tag}"
     albums: "{album_artist} - {album} ({year?})"
-
-  #
   # Plex-friendly alternatives:
-  # movies: '{title} ({year}) {quality}'
-  # series: '{title} {season_episode} {episode_name?}'
-  # songs: '{track_number}. {title}'
-  #
-  # Folder naming (optional). One template for all, or a per-kind map.
-  # Valid kinds: movies, series, songs, albums (album vars: see docs).
-  # folder: '{title} ({year?})'
-  # folder:
-  #   movies: '{title} ({year})'
-  #   series: '{title} ({year?})'
-  #   albums: '{album_artist} - {album} ({year?})'
+  #   movies: '{title} ({year}) {quality}'
+  #   series: '{title} {season_episode} {episode_name?}'
+  #   songs:  '{track_number}. {title}'
 
-# --- DRM / CDM --- docs/DRM_CONFIG.md
-# Which Widevine (.wvd) or PlayReady (.prd) device to use. 'default' is the
-# global fallback. Per-service, per-profile, quality-based selection and remote
-# CDMs are all documented in docs/DRM_CONFIG.md.
-cdm:
-  default: WVD_1
+# tag — release-group tag (fills {tag}, written into MKV/audio tags).
+# tag: NOGRP
 
-# --- Key vaults --- docs/DRM_CONFIG.md
-# Where obtained Content Encryption Keys (CEKs) are stored and retrieved.
-key_vaults:
-  - type: SQLite
-    name: Local
-    path: key_store.db
+# tag_group_name — include `tag` in the MKV Group tag (default true).
+# tag_group_name: true
 
-# --- Everything else lives in docs/ ---
-# credentials, directories, proxy providers, subtitles, muxing, serve/REST API,
-# remote services, per-service overrides, debug logging, Firefox cookie import,
-# and more. See docs/README.md for the full index.
+# tag_imdb_tmdb — write IMDb/TMDB/TVDB IDs into MKV tags (default true).
+# tag_imdb_tmdb: true
+
+# chapter_fallback_name — template for chapter names, e.g. "Chapter {i:02}".
+# chapter_fallback_name: "Chapter {i:02}"
+
+# unicode_filenames — allow Unicode filenames (default false = ASCII-sanitised).
+# unicode_filenames: false
+
+# tag_rules — conditionally swap `tag`. First match wins; all `when` keys are
+# AND-ed. Quote operator values: quality: ">=2160", resolution: "<1080".
+# tag_rules:
+#   - when: { title_type: movie }
+#     tag: MOVIEGRP
+#   - when: { title_type: series }
+#     tag: TVGRP
+#   - when: { lang_tag: SUBBED }
+#     tag: SUBGRP
+#   - when: { quality: ">=2160" }
+#     tag: UHDGROUP
+#   - when: { resolution: "<1080" }
+#     tag: SDGROUP
+
+
+# ------------------------------------------------------------------------------
+# DOWNLOAD DEFAULTS — persistent `dl` flags (CLI flag beats these).
+# Config key = flag long name with dashes -> underscores. Internal names:
+#   range (=-r), list (=--list), tmdb_id, imdb_id, anilist_id, no_atmos,
+#   output_dir (=-o), cdm_only (--cdm-only/--vaults-only).
+# ------------------------------------------------------------------------------
+# dl:
+#   lang: [en]                 # -l; `orig` = original language; `-` prefix excludes
+#   v_lang: [orig]             # -vl, video-only languages
+#   a_lang: [orig, -es]        # -al, audio-only languages
+#   s_lang: [all, -es]         # -sl, subtitle languages
+#   quality: [1080, 2160]      # -q, resolution(s); empty = best
+#   vcodec: [H.265]            # -v, video codec(s); empty = any
+#   acodec: [EC3, AAC]         # -a, audio codec(s); empty = any
+#   vbitrate: 8000             # -vb (kbps)
+#   abitrate: 256              # -ab (kbps)
+#   vbitrate_range: "6000-7000"
+#   abitrate_range: "128-256"
+#   range: [SDR]               # -r; SDR | HLG | HDR10 | HDR10P | DV | HYBRID
+#   channels: 6                # -c; 6 = 5.1
+#   no_atmos: false            # -naa, exclude Atmos audio
+#   split_audio: false         # one output file per audio codec
+#   merge_video: false         # merge video tracks sharing height/range/codec
+#   select_titles: false       # interactive title selection
+#   wanted: [S01-S05]          # -w; e.g. S01-S05,S07 / S01E01-S02E03
+#   latest_episode: false      # only the most recent episode
+#   require_audio: []          # audio languages that must exist
+#   require_video: []          # video languages that must exist
+#   require_subs: []           # subtitle languages that must exist
+#   forced_subs: false         # -fs, include forced subs
+#   forced_s_lang: [en]        # -fsl, implies forced_subs
+#   exact_lang: false          # exact language matching (no variants)
+#   sub_format: srt            # srt | vtt | original | ... (convert subtitles)
+#   video_only: false          # -V
+#   audio_only: false          # -A
+#   subs_only: false           # -S
+#   chapters_only: false       # -C
+#   no_subs: false             # -ns
+#   no_audio: false            # -na
+#   no_chapters: false         # -nc
+#   no_video: false            # -nv
+#   no_attachments: false      # -nt
+#   audio_description: false   # -ad
+#   skip_subtitle_errors: false
+#   slow: "20-40"              # delay between titles (seconds)
+#   list: false                # --list, list tracks without downloading
+#   list_titles: false
+#   skip_dl: false             # skip download, retrieve keys only
+#   export: false              # write track/keys to exports JSON
+#   cdm_only: false            # --cdm-only (true) / --vaults-only (false)
+#   proxy: us                  # default proxy URI or 2-letter country
+#   no_proxy: false
+#   no_proxy_download: false
+#   no_folder: false           # disable per-title folder
+#   no_source: false           # drop source tag from name
+#   no_mux: false              # do not mux into a container
+#   workers: 8                 # threads per track
+#   adaptive_workers: false
+#   download_processes: 1      # processes per track's segment batch
+#   downloads: 2               # tracks downloaded concurrently
+#   speed_limit: "5M"          # global cap, bytes/sec (5M = 5.0 MB/s)
+#   worst: false               # lowest bitrate within -q
+#   best_available: false      # warn instead of failing on missing quality/lang
+#   continue_downloads: false  # one-off resume enable
+#   tmdb_id: 12345             # --tmdb (tagging/enrich)
+#   imdb_id: tt1234567         # --imdb
+#   tvdb_id: 123456            # --tvdb
+#   anilist_id: 21             # --anilist
+#   tvdb_order: official       # official | dvd | absolute | alternate | regional
+#   enrich: false              # overwrite title/year/language from metadata
+
+# continue_downloads — keep finished segments to resume a failed download.
+# continue_downloads: false
+
+
+# ------------------------------------------------------------------------------
+# SUBTITLES — SDH stripping, conversion, mux-vs-sidecar.
+# ------------------------------------------------------------------------------
+# subtitle:
+#   strip_sdh: true            # strip hearing-impaired cues (default true)
+#   sdh_method: auto           # SDH-stripping backend
+#   preserve_formatting: true  # keep WebVTT cue text as written
+#   convert_before_strip: true
+#   conversion_method: auto    # subtitle conversion backend
+#   output_mode: mux           # mux | sidecar | both
+#   sidecar_format: srt        # sidecar file format
+#   type_priority: [normal, sdh, forced]   # order of subtitle types
+#   group_by: type             # type | language
+#   language_priority: [orig, en, es, fr]  # languages sorted to the top
+
+
+# ------------------------------------------------------------------------------
+# AUDIO — soft priorities (nothing is dropped).
+# ------------------------------------------------------------------------------
+# audio:
+#   codec_priority: [EAC3, AC3, AAC]     # codec tie-break order
+#   language_priority: [orig, en]        # languages sorted to the top
+
+
+# ------------------------------------------------------------------------------
+# MUXING — Matroska mux options.
+# ------------------------------------------------------------------------------
+# muxing:
+#   set_title: true            # write human-readable title into MKV
+#   default_language:          # force the `default` flag per track type
+#     audio: en
+#     subtitle: en
+#   merge_audio: true          # merge all audio into one file
+#   merge_video: false         # merge video variants sharing height/range/codec
+#   concurrency: 4             # parallel mkvmerge processes (1 on HDD)
+
+
+# ------------------------------------------------------------------------------
+# LANGUAGE TAGS — rule engine behind the {lang_tag} filename variable.
+# ------------------------------------------------------------------------------
+# language_tags:
+#   rules:
+#     - audio: [ja]
+#       subs_contain: [en]
+#       tag: SUBBED
+
+# dual_multi_mode — how {dual}/{multi}/{dubbed} are decided: strict | count.
+# dual_multi_mode: strict
+
+
+# ------------------------------------------------------------------------------
+# DRM & CDM
+# ------------------------------------------------------------------------------
+# cdm — service tag -> device. `default` is the fallback. Resolution order:
+#   dl --cdm override > per-service > default. Values can be nested dicts for
+#   quality ("1080", ">=1080"), DRM system (widevine/playready), or profile.
+# cdm:
+#   default: chromecdm_l3
+#   EXAMPLE2: android_l1
+#   EXAMPLE1:
+#     ">=1080": android_l1
+#     "<1080": chromecdm_l3
+#     widevine: android_l1
+#     playready: sl3000
+#     default: chromecdm_l3
+
+# remote_cdm — remote CDM definitions matched by `name` (referenced from `cdm`).
+#   types: decrypt_labs, custom_api, or pywidevine/pyplayready RemoteCdm (no type).
+#   PlayReady `host` needs a trailing /playready segment.
+# remote_cdm:
+#   - name: keyxtractor
+#     type: decrypt_labs
+#     device_name: L1                # ChromeCDM | L1 | L2 | SL2 | SL3
+#   - name: my_wv_server
+#     host: https://cdm.example.com
+#     secret: s3cr3t
+#     device_name: android_l1
+#     device_type: ANDROID
+#     system_id: 26830
+#     security_level: 1
+#   - name: my_custom
+#     type: custom_api
+#     host: https://cdm.example.com
+#     device:
+#       name: ChromeCDM
+#       type: CHROME
+#       system_id: 26830
+#       security_level: 3
+#     auth:
+#       type: bearer              # header | bearer | basic
+#       key: your-token
+#     endpoints:
+#       get_request: { path: /get-challenge, method: POST }
+#       decrypt_response: { path: /get-keys, method: POST }
+#     timeout: 30
+
+# decryption — tool that decrypts CENC tracks: "shaka" (default) | "mp4decrypt",
+# or a per-service dict. HLS AES-128 ClearKey is always decrypted in-process.
+# decryption:
+#   default: shaka
+#   EXAMPLE1: mp4decrypt
+
+# decrypt_segments — decrypt each fMP4 segment as it arrives (mp4decrypt only).
+# decrypt_segments: false
+
+
+# ------------------------------------------------------------------------------
+# NETWORK & PROXY
+# ------------------------------------------------------------------------------
+# network — TLS fingerprint + HTTP client settings (rnet).
+#   browser must be an exact preset: Chrome131, Firefox135, Edge101, Safari18,
+#   OkHttp4_12, OkHttp5, Opera118, ...
+# network:
+#   browser: Chrome131
+#   http1_only: false            # force HTTP/1.1 (can gain 30-50% on some hosts)
+#   http2_only: false            # force HTTP/2
+#   connect_timeout: 10
+#   read_timeout: 30
+#   timeout: 60                  # total request timeout
+#   allow_redirects: true
+#   pool_idle_timeout: 55
+#   pool_max_idle_per_host: 64
+#   pool_max_size: 128
+#   tcp_keepalive: 30
+#   tcp_keepalive_interval: 75
+#   tcp_keepalive_retries: 9
+#   tcp_nodelay: true
+
+# headers — default headers merged into every HTTP session.
+# headers:
+#   Accept-Language: en-US,en;q=0.9
+
+# proxy_providers — VPN/proxy configuration. Basic = static country -> URI(s).
+# proxy_providers:
+#   basic:
+#     us: http://user:pass@1.2.3.4:8080
+#     de:
+#       - http://a.example:8080
+#       - socks5://b.example:1080
+#   nordvpn:
+#     username: <service username>
+#     password: <service password>
+#   surfsharkvpn:
+#     username: <service username>
+#     password: <service password>
+#   windscribevpn:
+#     username: <service username>
+#     password: <service password>
+#   expressvpn:
+#     enable: true                # device login
+#   protonvpn:
+#     username: <tv login>
+#     password: <tv password>
+#   gluetun:
+#     host: localhost
+#     port: 8000                  # Gluetun local control port
+
+
+# ------------------------------------------------------------------------------
+# KEY VAULTS — ordered list of backends; queried in order to reuse content keys.
+# ------------------------------------------------------------------------------
+# key_vaults:
+#   - type: SQLite
+#     name: Local
+#     path: ~/.local/share/unshackle/key_store.db
+#     no_push: false              # true = read-only vault
+#   - type: MySQL
+#     name: Team
+#     host: db.example.com
+#     database: keys
+#     username: unshackle
+#     password: hunter2
+#     no_push: false
+#   - type: API
+#     name: TeamAPI
+#     uri: https://keys.example.com/api
+#     token: your-token
+#     headers:
+#       X-Extra: value
+#   - type: HTTP
+#     name: TeamHTTP
+#     host: https://keys.example.com
+#     username: unshackle
+#     password: hunter2
+#     api_mode: query             # query | json | decrypt_labs
+
+# vault_timeout — seconds for vault operations (default 10.0).
+# vault_timeout: 10.0
+
+
+# ------------------------------------------------------------------------------
+# SERVICES & AUTHENTICATION
+# ------------------------------------------------------------------------------
+# services — per-service config keyed by canonical tag. Well-known sub-keys:
+#   proxy_map (region remap), title_map (exact rename), dl (per-service defaults).
+# services:
+#   EXAMPLE1:
+#     proxy_map:
+#       us: us-nyc
+#       "nordvpn:ca": ca-toronto
+#     title_map:
+#       "My Show: The Movie": "My Show Presents The Movie"
+#     dl:
+#       lang: [en, ja]
+#       range: [DV]
+
+# credentials — per-service logins: "username:password[:extra]", a list, or a
+# dict of profile name -> credential (`-p/--profile` selects; `default` wins).
+# credentials:
+#   EXAMPLE2: user@example.com:hunter2
+#   EXAMPLE1:
+#     default: primary@example.com:pw1
+#     second: secondary@example.com:pw2
+
+# firefox_cookies — pull cookies straight from a local Firefox profile (read-only).
+# firefox_cookies:
+#   EXAMPLE1:
+#     hosts: [example.com, .cdn.example.com]
+#     local_storage: false       # also read webappsstore.sqlite
+
+# remote_services — remote unshackle servers for `dl --remote`.
+# remote_services:
+#   my_server:
+#     url: https://unshackle.example.com
+#     api_key: your-key
+#     auth_headers: [Authorization, x-secret-key]
+#     server_cdm: true           # true = prefer server CDM; false = local CDM
+#     services:
+#       EXAMPLE1:
+#         title_map: { "Alt Name": "Real Name" }
+
+# serve — the built-in REST API + CDM server. See docs/dev/rest-api/ for the
+# full guide. Most `dl:` keys also work directly inside `serve` as server-wide
+# download defaults.
+# serve:
+#   api_secret: change-me         # master secret (X-Secret-Key header)
+#   remote_only: false            # only remote-session endpoints
+#   services: [EXAMPLE1, EXAMPLE2]  # global allowlist (omit = allow all)
+#   dashboard:
+#     key: your-dashboard-key     # enables /api/dashboard/ endpoints
+#   session_ttl: 300              # seconds
+#   max_sessions: 100             # null/0 = unlimited
+#   history_limit: 100            # finished jobs retained in history
+#   compression_level: 1          # gzip level
+#   services_refresh_interval: 3600  # seconds; 0 = off
+#   global_speed_limit: "10M"     # shared cap across all jobs
+#   cdm_overrides: [device_a]     # or true = any; unset rejects overrides
+#   allow_job_credentials: false  # permit clients to send credentials per job
+#   downloads: 3                  # server-wide dl default (same keys as `dl:`)
+#   best_available: true
+#   devices: []                   # Widevine devices (auto-filled from wvds)
+#   playready_devices: []         # PlayReady devices (auto-filled from prds)
+#   tiers:
+#     bot: { rate_limit: 600 }    # requests/hour per key on this tier
+#   users:
+#     a1b2c3d4:                   # this user's API key
+#       username: alice
+#       services: [EXAMPLE1]
+#       devices: [chromecdm_l3]
+#       playready_devices: [sl3000]
+#       tier: bot
+#       rate_limit: 600           # wins over the tier's
+#       server_cdm: true          # true | false | [EXAMPLE1]
+#       server_accounts: [EXAMPLE1]
+#       server_proxy: true
+#       admin: false              # maintenance endpoints
+#   server_accounts:              # server lends its own accounts to remote sessions
+#     EXAMPLE1:
+#       ca_main: ca
+#       eu_box: [gb, fr, de]
+#       shared: global
+#     EXAMPLE2: true
+
+
+# ------------------------------------------------------------------------------
+# POST-SCRIPTS — run your own command when a download finishes.
+#   Per script: event = success|failure, mode = file|season|run, wait = bool.
+#   No shell: pipes/&&/redirection need `bash -c "..."`. Prefix your variables.
+# ------------------------------------------------------------------------------
+# post_scripts:
+#   - command: "python ~/scripts/upload.py {filepath} --service={service} --tmdb={tmdb} --subs={sidecars}"
+#     event: success
+#     mode: file
+#     wait: false
+#   - command: "python ~/scripts/notify.py --title={title} --episode={episode}"
+#   - command: "python ~/scripts/scan.py --folder={folder}"
+#     mode: run
+#   - command: "python ~/scripts/fail.py --title={title} --error={error}"
+#     event: failure
+
+
+# ------------------------------------------------------------------------------
+# EXTERNAL API KEYS — metadata & geolocation (all optional, unset by default).
+# ------------------------------------------------------------------------------
+# omdb_api_key: ""              # OMDb (IMDb metadata fallback)
+# tmdb_api_key: ""              # TMDB (metadata enrichment + IDs)
+# simkl_client_id: ""           # SIMKL (alternative/fallback metadata)
+# tvdb_api_key: ""              # TheTVDB v4 (strongest on TV series)
+# tvdb_pin: ""                  # subscriber PIN (only for user-supported keys)
+# tvdb_order: ""                # default --tvdb-order (official|dvd|absolute|alternate|regional)
+# anilist_title_language: english  # english | romaji | native
+# disable_metadata: false       # stop all automatic metadata lookups
+# decrypt_labs_api_key: ""      # global Decrypt Labs key (remote CDM / vault)
+# ipinfo_api_key: ""            # ipinfo.io key (IP/region lookups)
+
+# metadata_providers — order to try. A list, or a map keyed by kind (tv/movie).
+# Default order: [imdb, omdb, simkl, tmdb, tvdb, anilist]. `imdb`/`anilist` need
+# no key; providers without keys are skipped.
+# metadata_providers:
+#   tv: [tvdb, tmdb, simkl, imdb, omdb]
+#   movie: [tmdb, imdb, omdb, simkl, tvdb]
+
+
+# ------------------------------------------------------------------------------
+# CACHING & UPDATES
+# ------------------------------------------------------------------------------
+# title_cache_enabled: true     # master switch for the title cache
+# title_cache_time: 1800        # seconds a fresh title stays fresh (30 min)
+# title_cache_max_retention: 86400  # seconds total retention (24 h)
+
+# update_checks: true           # check GitHub for new releases (backgrounded)
+# update_check_interval: 24     # minimum hours between checks
+
+
+# ------------------------------------------------------------------------------
+# APPEARANCE
+# ------------------------------------------------------------------------------
+# theme: catppuccin-mocha       # catppuccin-mocha|dracula|nord|gruvbox|one-dark|
+#                               # tokyo-night|monokai|flexoki|solarized-dark.
+#                               # Preview all: `unshackle env theme`.
+
+
+# ------------------------------------------------------------------------------
+# LOGGING, PRIVACY & DEBUG
+# ------------------------------------------------------------------------------
+# redact_paths: true            # mask home/venv/install paths in logs
+# debug: false                  # global debug mode
+# debug_keys: false             # WARNING: logs content keys (sensitive)
+# debug_requests: false         # log HTTP requests
+# set_terminal_bg: false        # append theme background colour to styles
+
+
+# ------------------------------------------------------------------------------
+# DEPRECATED / REMOVED — do not use.
+#   curl_impersonate  -> deprecated alias of `network` (warning emitted)
+#   downloader        -> deprecated; ignored (unified requests downloader)
+#   scene_naming      -> REMOVED; setting it exits with an error
+#   imdb_api_enabled  -> REMOVED; ignored (use the keyless `imdb` provider)
+# ------------------------------------------------------------------------------

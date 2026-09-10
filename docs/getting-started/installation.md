@@ -44,7 +44,7 @@ isolated environment for the package and puts the `unshackle` command on your
 `PATH` without touching your system Python.
 
 ```shell title="Install as a uv tool"
-uv tool install git+https://github.com/unshackle-dl/unshackle.git
+uv tool install git+https://github.com/mahimmazidul/unshackle.git
 ```
 
 Once it finishes, the `unshackle` command is available globally:
@@ -66,7 +66,7 @@ an in-development branch or to keep your own local services alongside unshackle)
 for the duration of the command, so you do not have to activate it yourself.
 
 ```shell title="Run from a git clone"
-git clone https://github.com/unshackle-dl/unshackle.git
+git clone https://github.com/mahimmazidul/unshackle.git
 cd unshackle
 uv run unshackle --help
 ```
@@ -208,7 +208,7 @@ install the external tools by asking your provider (or place static binaries und
 
 ```shell
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install git+https://github.com/unshackle-dl/unshackle.git
+uv tool install git+https://github.com/mahimmazidul/unshackle.git
 ```
 
 Writable paths (config, cache, logs, devices, downloads) default to your home directory

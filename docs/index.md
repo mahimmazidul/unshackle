@@ -10,7 +10,7 @@ Smooth Streaming (ISM) parsing, both **Widevine** and **PlayReady** DRM, and a
 built-in HTTP server.
 
 !!! warning "Use responsibly"
-    The [GPL-3.0](https://github.com/unshackle-dl/unshackle/blob/main/LICENSE) licence covers unshackle.
+    The [GPL-3.0](https://github.com/mahimmazidul/unshackle/blob/dev/LICENSE) licence covers unshackle.
     Do not use it for content you do not have the rights to. Keep the core free and
     open, keep your own services private, and be kind.
 
@@ -50,14 +50,14 @@ at a title and it will:
 === "Install as a tool"
 
     ```shell
-    uv tool install git+https://github.com/unshackle-dl/unshackle.git
+    uv tool install git+https://github.com/mahimmazidul/unshackle.git
     unshackle --help
     ```
 
 === "Run from a clone"
 
     ```shell
-    git clone https://github.com/unshackle-dl/unshackle.git
+    git clone https://github.com/mahimmazidul/unshackle.git
     cd unshackle
     uv run unshackle --help
     ```

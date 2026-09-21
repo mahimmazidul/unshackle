@@ -27,7 +27,7 @@ When unshackle starts, it searches a list of locations and uses the **first file
 | 8 | One visible home folder | `~/unshackle/unshackle.yaml` |
 | 9 | Legacy OS user-config directory | `~/.config/unshackle/unshackle.yaml` |
 
-Location 8 is the recommended place for a standalone config: it is a normal, visible folder (not a hidden `.config` path), lives outside the package, and survives reinstalls. If you keep the yaml inside the clone next to `.venv` (location 5), that file is found even when the venv is not an editable install. YAML is optional at install — unshackle uses `~/unshackle/downloads`, `~/unshackle/cache`, and the other defaults with no config file.
+If you keep the yaml inside the clone next to `.venv` (location 5), that file is found even when the venv is not an editable install. YAML is optional at install — with a venv, unshackle uses `<clone>/downloads`, `<clone>/cache`, and the other defaults with no config file. Without a venv the fallback folder is `~/unshackle`.
 
 !!! tip "Not sure which file is being used?"
     Operate `unshackle env info`. It prints the path unshackle loaded the config from, or tells you that it found none. It also prints every directory unshackle currently uses.
@@ -121,13 +121,13 @@ services:
 
 ## The directory layout
 
-The `directories` config key controls where unshackle reads and writes its various files. Each directory has a sensible default, and you can override most of them by giving a new path. A path can use `~` for your home directory. A **bare name** (no `/` and no `~`) is resolved under `~/unshackle` for data dirs (`downloads: downloads` → `~/unshackle/downloads`) and under the installed package for `commands` / `vaults` / `fonts`.
+The `directories` config key controls where unshackle reads and writes its various files. Each directory has a sensible default, and you can override most of them by giving a new path. A path can use `~` for your home directory. A **relative path** (`./downloads` or `downloads`) is resolved under the clone (the folder that contains `.venv`) when a venv is active, otherwise under `~/unshackle`.
 
 ```yaml title="unshackle.yaml"
 directories:
-  downloads: downloads          # → ~/unshackle/downloads
-  temp: ~/unshackle/temp
-  cache: ~/unshackle/cache
+  downloads: ./downloads        # → <clone>/downloads
+  temp: ./temp
+  cache: ./cache
 ```
 
 The directories unshackle uses:

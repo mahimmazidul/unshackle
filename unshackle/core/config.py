@@ -72,27 +72,89 @@ def resolve_cdm_name(cdm: dict, service: str, override: Any = None) -> Any:
     return override or ci_get(cdm, service) or ci_get(cdm, "default")
 
 
-# Bare names (`downloads: downloads`) go under ~/unshackle. Code module dirs stay
-# relative to the installed package so `vaults: vaults` does not leave site-packages.
-_CODE_DIR_KEYS = frozenset({"commands", "vaults", "fonts"})
+# Writable data lives in the clone (the folder that contains .venv) when a
+# venv is active, otherwise ~/unshackle. Relative yaml paths (./downloads or
+# downloads) join that folder. Do not resolve() — seedboxes often have
+# /home/user -> /homeNN/user, and the user-facing path should stay /home/user.
+_DATA_DIR_KEYS = (
+    "downloads",
+    "temp",
+    "cache",
+    "cookies",
+    "logs",
+    "exports",
+    "wvds",
+    "prds",
+    "dcsl",
+    "watchers",
+)
+
+
+def _venv_prefix() -> Optional[Path]:
+    """Active virtualenv directory, preferring VIRTUAL_ENV's spelling."""
+    env = os.environ.get("VIRTUAL_ENV")
+    if env:
+        return Path(env).expanduser()
+    prefix = Path(sys.prefix)
+    if (prefix / "pyvenv.cfg").is_file() or prefix.name in {".venv", "venv", "env"}:
+        return prefix
+    try:
+        resolved = prefix.resolve()
+    except OSError:
+        return None
+    if (resolved / "pyvenv.cfg").is_file() or resolved.name in {".venv", "venv", "env"}:
+        return resolved
+    return None
+
+
+def _venv_root() -> Optional[Path]:
+    """Parent of the active virtualenv (the clone), if we are in one."""
+    prefix = _venv_prefix()
+    return prefix.parent if prefix is not None else None
+
+
+def _prefer_logical_home(path: Path) -> Path:
+    """Keep a user-facing path: cwd spelling, then /home/<user> over /homeNN/<user>."""
+    try:
+        target = path.resolve()
+        cwd = Path.cwd()
+        if cwd.resolve() == target:
+            return cwd
+    except OSError:
+        return path
+    try:
+        passwd_home = Path.home().resolve()
+        short = Path("/home") / Path.home().name
+        if short.resolve() != passwd_home:
+            return path
+        return short / target.relative_to(passwd_home)
+    except (OSError, ValueError):
+        return path
+
+
+def _project_home() -> Path:
+    """One folder for cache/downloads/logs: the clone, else ~/unshackle."""
+    root = _venv_root()
+    if root is not None:
+        return _prefer_logical_home(root)
+    return _prefer_logical_home(Path.home() / "unshackle")
 
 
 def _resolve_user_path(path: Any, *, relative_to: Path) -> Path:
-    """Expand `~` and turn a relative name into relative_to / name."""
+    """Expand `~` and turn a relative name into relative_to / name. Does not resolve()."""
     value = Path(str(path)).expanduser()
     if value.is_absolute():
         return value
-    return (relative_to / value).resolve()
+    return relative_to / value
 
 
 class Config:
     class _Directories:
         # Default directories. These are only fallbacks: any path a user sets in
         # unshackle.yaml overrides the matching entry (see Config.__init__).
-        # All writable runtime data lives in one visible folder (~/unshackle), not
-        # in hidden XDG paths (~/.config, ~/.local, ~/.cache) that are hard to
-        # browse and move on seedboxes. YAML is optional — these defaults apply
-        # with no config file. Code locations stay package-relative.
+        # Writable runtime data lives in one folder: the clone (parent of .venv)
+        # when a venv is active, otherwise ~/unshackle. YAML is optional.
+        # commands / services / vaults / fonts stay package-relative until set.
         app_dirs = AppDirs("unshackle", False)
         core_dir = Path(__file__).resolve().parent
         namespace_dir = core_dir.parent
@@ -100,7 +162,7 @@ class Config:
         services = [namespace_dir / "services"]
         vaults = namespace_dir / "vaults"
         fonts = namespace_dir / "fonts"
-        home = Path.home() / "unshackle"  # one visible directory
+        home = _project_home()  # clone (venv parent) or ~/unshackle
         user_configs = home
         data = home
         downloads = home / "downloads"
@@ -144,7 +206,16 @@ class Config:
         self.directories = self._Directories()
         raw_dirs = dict(kwargs.get("directories") or {})
         if "home" in raw_dirs:
-            self.directories.home = _resolve_user_path(raw_dirs.pop("home"), relative_to=Path.home())
+            self.directories.home = _resolve_user_path(raw_dirs.pop("home"), relative_to=_project_home())
+        else:
+            self.directories.home = _project_home()
+        self.directories.home = _prefer_logical_home(self.directories.home)
+        self.directories.user_configs = self.directories.home
+        self.directories.data = self.directories.home
+        for name in _DATA_DIR_KEYS:
+            if name not in raw_dirs:
+                leaf = Path(getattr(self.directories, name)).name
+                setattr(self.directories, name, self.directories.home / leaf)
         for name, path in raw_dirs.items():
             if name.lower() in ("app_dirs", "core_dir", "namespace_dir", "user_configs", "data"):
                 # these must not be modified by the user
@@ -155,12 +226,10 @@ class Config:
                     self.directories,
                     name,
                     [
-                        p if is_repo_spec(p) else _resolve_user_path(p, relative_to=self.directories.namespace_dir)
+                        p if is_repo_spec(p) else _resolve_user_path(p, relative_to=self.directories.home)
                         for p in path
                     ],
                 )
-            elif name.lower() in _CODE_DIR_KEYS:
-                setattr(self.directories, name, _resolve_user_path(path, relative_to=self.directories.namespace_dir))
             else:
                 setattr(self.directories, name, _resolve_user_path(path, relative_to=self.directories.home))
 
@@ -401,14 +470,6 @@ class Config:
         if not path.is_file():
             raise FileNotFoundError(f"Config file path ({path}) is not to a file.")
         return cls(**restore_bool_languages(yaml.safe_load(path.read_text(encoding="utf8")) or {}))
-
-
-def _venv_root() -> Optional[Path]:
-    """Parent of the active virtualenv, if we are running inside one."""
-    prefix = Path(sys.prefix).resolve()
-    if (prefix / "pyvenv.cfg").is_file() or prefix.name in {".venv", "venv", "env"}:
-        return prefix.parent
-    return None
 
 
 def get_config_candidates() -> list[Path]:

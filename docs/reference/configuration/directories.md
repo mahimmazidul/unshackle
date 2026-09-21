@@ -2,21 +2,20 @@
 
 The `directories` config key is a **dict** mapping directory names to filesystem paths.
 unshackle honours only the names listed below. A handful are **protected** and you cannot
-move them, and unshackle silently ignores an override of one. Writability-friendly defaults all live in **one visible folder** (`~/unshackle`) — not
-hidden `.config` / `.cache` / `.local` paths — so the same install runs both rootless
-(seedbox) and as root. YAML is optional; these defaults apply with no config file.
-Only code locations (`commands`, `services`, `vaults`, `fonts`, `core_dir`,
-`namespace_dir`) stay package-relative. Absolute paths and `~` are kept as written.
-A **bare name** (`downloads: downloads`) is resolved under `directories.home`
-(`~/unshackle` unless you override `home`). `commands`, `vaults`, and `fonts` resolve
-a bare name against the installed package so they do not leave site-packages.
+move them, and unshackle silently ignores an override of one. Writable defaults live in
+**one folder**: the clone (parent of `.venv`) when a venv is active, otherwise
+`~/unshackle`. YAML is optional; these defaults apply with no config file.
+`commands`, `services`, `vaults`, and `fonts` stay package-relative until you set them.
+Absolute paths and `~` are kept as written. A **relative path** (`./downloads` or
+`downloads`) is resolved under `directories.home` (the clone, unless you override `home`).
 
 ```yaml title="unshackle.yaml"
 directories:
-  downloads: downloads                 # → ~/unshackle/downloads
+  downloads: ./downloads               # → <clone>/downloads
   temp: /mnt/fast-scratch/unshackle-temp
-  wvds: ~/unshackle/WVDs
-  prds: ~/unshackle/PRDs
+  wvds: ./WVDs
+  prds: ./PRDs
+  vaults: ./vaults                     # override: clone instead of the package
 ```
 
 | Key | Type | Default | Overridable | Purpose |

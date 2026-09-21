@@ -6,7 +6,8 @@
 
 set -eu
 
-LOG_DIR="${UNSHACKLE_LOG_DIR:-$HOME/unshackle/logs}"
+CLONE_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+LOG_DIR="${UNSHACKLE_LOG_DIR:-$CLONE_DIR/logs}"
 PID_FILE="$LOG_DIR/serve.pid"
 
 if [ ! -f "$PID_FILE" ]; then

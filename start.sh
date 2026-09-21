@@ -18,7 +18,8 @@ set -eu
 
 HOST="${UNSHACKLE_HOST:-127.0.0.1}"
 PORT="${UNSHACKLE_PORT:-8786}"
-LOG_DIR="${UNSHACKLE_LOG_DIR:-$HOME/unshackle/logs}"
+CLONE_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+LOG_DIR="${UNSHACKLE_LOG_DIR:-$CLONE_DIR/logs}"
 PID_FILE="$LOG_DIR/serve.pid"
 LOG_FILE="$LOG_DIR/serve.log"
 

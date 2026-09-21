@@ -182,7 +182,7 @@ GET /api/dashboard/services
 [{"tag": "EXAMPLE", "state": "staged", "error": null,
   "commit": "9cc230c98f13b83f6c6fe831595b9702d3ba2786", "staged_commit": "5f0aa17...",
   "staged_since": 1756908900.0, "sessions": 1, "jobs": 1,
-  "aliases": ["EXMPL"], "geofence": ["US"]}]
+  "aliases": ["EXMPL"], "geofence": ["US"], "geoblock": []}]
 ```
 
 `state` is `loaded`, `staged` or `failed`. A service that failed to import keeps its error
@@ -190,7 +190,7 @@ here instead of disappearing, and `/status` still counts it in the service total
 `state` values here for the number that loaded.
 
 A `staged` service has an update on disk that a busy service blocks from the import: the repo
-pull already happened, so `commit` (what runs now) and `staged_commit` (what waits) differ. It swaps in when the last job for that tag finishes. Both commits are `null`
+pull already happened, so `commit` (what runs now) and `staged_commit` (what waits) differ. It swaps in when the last job and the last remote session for that tag finish. Both commits are `null`
 for a service from a plain local directory rather than a git repo.
 
 Watch the `service` event rather than polling for the swap.
@@ -210,8 +210,10 @@ missing or a vault's credentials expired. This finds that before a job does.
 `status` is `ok`, `degraded` (an optional dependency is missing) or `failing` (a required one
 is). Player binaries are not checked: a headless server never has one and it plays nothing.
 Each check is `ok`, `warn` or `fail`. Check ids are the binary names, `cdm`,
-`vault:<name>` (the vault's configured `name`, so two vaults of the same type stay apart), and
-`proxies`.
+`vault:<name>` (the vault's configured `name`, so two vaults of the same type stay apart),
+`bad_keys` and `proxies`. `bad_keys` warns when the vaults hold no `SQLite` entry, because only
+that backend stores the flag for a content key a remote client proved wrong; without it the
+server serves the same bad pair again.
 
 The server caches the result for 30 seconds and keeps every probe shallow: a vault answers one
 lookup that should miss, and no probe allocates anything. A failing probe's `detail` has the

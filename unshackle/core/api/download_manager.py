@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from unshackle.core.api.events import bus, publish_service_event
 from unshackle.core.api.sanitize import sanitize_log
+from unshackle.core.utils.click_types import VIDEO_CODEC_LIST
 from unshackle.core.utils.redact import REDACTED, URL_USERINFO_RE, redact_path, redact_text
 
 log = logging.getLogger("download_manager")
@@ -37,9 +38,10 @@ def redact_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
     for key in SENSITIVE_PARAM_KEYS:
         if redacted.get(key):
             redacted[key] = REDACTED
-    proxy = redacted.get("proxy")
-    if isinstance(proxy, str) and "@" in proxy:
-        redacted["proxy"] = URL_USERINFO_RE.sub(f"{REDACTED}@", proxy)
+    for key in ("proxy", "proxy_download"):
+        proxy = redacted.get(key)
+        if isinstance(proxy, str) and "@" in proxy:
+            redacted[key] = URL_USERINFO_RE.sub(f"{REDACTED}@", proxy)
     return redacted
 
 
@@ -386,10 +388,7 @@ def perform_download(
 
     vcodec_raw = params.get("vcodec")
     if vcodec_raw:
-        if isinstance(vcodec_raw, str):
-            vcodec_raw = [vcodec_raw]
-        if isinstance(vcodec_raw, list) and vcodec_raw and not isinstance(vcodec_raw[0], Video.Codec):
-            params["vcodec"] = to_enum(vcodec_raw, Video.Codec)
+        params["vcodec"] = VIDEO_CODEC_LIST.convert(vcodec_raw)
     else:
         params["vcodec"] = []
 
@@ -455,6 +454,7 @@ def perform_download(
         "proxy": params.get("proxy"),
         "no_proxy": params.get("no_proxy", False),
         "no_proxy_download": params.get("no_proxy_download", False),
+        "proxy_download": params.get("proxy_download"),
         "profile": params.get("profile"),
         "cdm_name": params.get("cdm"),
         "repack": params.get("repack", False),
@@ -608,6 +608,7 @@ def perform_download(
                 cdm_only=params.get("cdm_only"),
                 no_proxy=params.get("no_proxy", False),
                 no_proxy_download=params.get("no_proxy_download", False),
+                proxy_download=params.get("proxy_download"),
                 no_folder=params.get("no_folder", False),
                 no_source=params.get("no_source", False),
                 no_mux=params.get("no_mux", False),
@@ -753,7 +754,7 @@ class DownloadQueueManager:
 
         async def run() -> None:
             try:
-                applied = await asyncio.to_thread(services.apply_pending, self.busy_services())
+                applied = await asyncio.to_thread(services.apply_pending, busy_services())
                 if applied:
                     log.info(f"Services reloaded after job completion: {', '.join(applied)}")
                     publish_service_event("applied", applied)
@@ -1198,3 +1199,14 @@ def get_download_manager() -> DownloadQueueManager:
         download_manager = DownloadQueueManager(max_concurrent, retention_hours)
 
     return download_manager
+
+
+def busy_services() -> set[str]:
+    """Tags a hot reload must not swap: those with an unfinished job and those a live remote session uses."""
+    from unshackle.core.api.session_store import get_session_store
+    from unshackle.core.api.stats import stats
+
+    busy = {entry.service_tag for entry in get_session_store().list()}
+    if stats.mode != "remote_only":
+        busy |= get_download_manager().busy_services()
+    return busy

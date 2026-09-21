@@ -27,11 +27,16 @@ class SQLite(Vault):
         if not table:
             return None
 
+        self.create_bad_keys_table()
         conn = self.conn_factory.get()
         cursor = conn.cursor()
 
         try:
-            cursor.execute(f"SELECT `id`, `key_` FROM `{table}` WHERE `kid`=? AND `key_`!=?", (kid, "0" * 32))
+            cursor.execute(
+                f"SELECT `id`, `key_` FROM `{table}` WHERE `kid`=? AND `key_`!=? "
+                "AND `key_` NOT IN (SELECT `key_` FROM `bad_keys` WHERE `kid`=?)",
+                (kid, "0" * 32, kid),
+            )
             cek = cursor.fetchone()
             return cek[1] if cek else None
         finally:
@@ -62,6 +67,9 @@ class SQLite(Vault):
 
         if isinstance(kid, UUID):
             kid = kid.hex
+
+        if self.is_bad_key(kid.replace("-", ""), key):
+            return False
 
         conn = self.conn_factory.get()
         cursor = conn.cursor()
@@ -101,6 +109,12 @@ class SQLite(Vault):
 
         if any(isinstance(kid, UUID) for kid, key_ in kid_keys.items()):
             kid_keys = {kid.hex if isinstance(kid, UUID) else kid: key_ for kid, key_ in kid_keys.items()}
+
+        self.create_bad_keys_table()
+        bad = set(self.conn_factory.get().execute("SELECT lower(`kid`), lower(`key_`) FROM `bad_keys`").fetchall())
+        kid_keys = {
+            kid: key_ for kid, key_ in kid_keys.items() if (kid.replace("-", "").lower(), key_.lower()) not in bad
+        }
 
         if not kid_keys:
             return 0
@@ -150,10 +164,76 @@ class SQLite(Vault):
         try:
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             for (name,) in cursor.fetchall():
-                if name != "sqlite_sequence":
+                if name not in ("sqlite_sequence", "bad_keys"):
                     yield name
         finally:
             cursor.close()
+
+    def is_bad_key(self, kid: Union[UUID, str], key: str) -> bool:
+        if isinstance(kid, UUID):
+            kid = kid.hex
+        self.create_bad_keys_table()
+        cursor = self.conn_factory.get().cursor()
+        try:
+            cursor.execute("SELECT 1 FROM `bad_keys` WHERE `kid`=? AND `key_`=?", (kid, key))
+            return cursor.fetchone() is not None
+        finally:
+            cursor.close()
+
+    def flag_bad_key(self, service: str, kid: Union[UUID, str], key: str, source: str) -> None:
+        if isinstance(kid, UUID):
+            kid = kid.hex
+        self.create_bad_keys_table()
+        conn = self.conn_factory.get()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "INSERT OR IGNORE INTO `bad_keys` (service, kid, key_, source) VALUES (?, ?, ?, ?)",
+                (service, kid, key, source),
+            )
+            table = None if self.no_push else self.resolve_table(service)
+            if table:
+                cursor.execute(f"DELETE FROM `{table}` WHERE `kid`=? AND `key_`=?", (kid, key))
+        finally:
+            conn.commit()
+            cursor.close()
+
+    def unflag_bad_key(self, kid: Union[UUID, str], key: str) -> None:
+        if isinstance(kid, UUID):
+            kid = kid.hex
+        self.create_bad_keys_table()
+        conn = self.conn_factory.get()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM `bad_keys` WHERE `kid`=? AND `key_`=?", (kid, key))
+        finally:
+            conn.commit()
+            cursor.close()
+
+    def create_bad_keys_table(self) -> None:
+        """Make the bad_keys table if it does not exist yet. Runs the DDL once per instance."""
+        if getattr(self, "_bad_keys_ready", False):
+            return
+        conn = self.conn_factory.get()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bad_keys (
+                  "service"    TEXT NOT NULL,
+                  "kid"        TEXT NOT NULL COLLATE NOCASE,
+                  "key_"       TEXT NOT NULL COLLATE NOCASE,
+                  "source"     TEXT NOT NULL,
+                  "flagged_at" TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  UNIQUE("kid", "key_")
+                );
+                """
+            )
+        finally:
+            conn.commit()
+            cursor.close()
+        # set only after the commit: a parallel vault thread must not query a table still being made
+        self._bad_keys_ready = True
 
     def resolve_table(self, name: str) -> Optional[str]:
         """Get the actual Table name matching `name` case-insensitively, if it exists."""

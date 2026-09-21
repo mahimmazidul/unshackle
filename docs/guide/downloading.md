@@ -120,6 +120,8 @@ either enum **names** or their **values**, comma-separated.
 | `VP9` | `VP9` |
 | `AV1` | `AV1` |
 
+`H264` and `H265` are aliases of `AVC` and `HEVC`.
+
 ```shell title="Either spelling works"
 unshackle dl -v HEVC   EXAMPLE 81234567
 unshackle dl -v H.265  EXAMPLE 81234567
@@ -729,12 +731,15 @@ unshackle dl --proxy nordvpn:ca EXAMPLE 81234567
 unshackle dl --proxy 'http://user:pass@host:8080' EXAMPLE 81234567
 ```
 
-Two related flags:
+Three related flags:
 
 - `--no-proxy`: force-disable all proxy use for this run.
 - `--no-proxy-download`: bypass the proxy for **all downloads**. The manifest,
   license, and authentication requests still go through the proxy. This is useful when you
   need the proxy only to satisfy geo-checks, not to move the bulk of the data.
+- `--proxy-download`: use a different proxy for **all downloads**. The manifest,
+  license, and authentication requests still go through `--proxy`. Takes the same forms
+  as `--proxy`.
 
 ## Performance and caching
 
@@ -762,7 +767,7 @@ unshackle dl -w S01 --slow 30-60 EXAMPLE 81234567
 By default, unshackle checks your **key vaults** first and only asks a **CDM** to license
 a content key when the vault misses. You can force one side or the other:
 
-- `--cdm-only`: only use the CDM (skip vaults).
+- `--cdm-only`: only use the CDM (skip vaults). Over a `server_cdm` remote session the flag does not reach the server, whose vault shortcut still runs; it only skips the client's decode check on a server key.
 - `--cdm <name>`: use the named CDM device for this run, ignoring the `cdm` config mapping (including its quality and Widevine/PlayReady sub-entries).
 - `--vaults-only`: only use key vaults and never license through the CDM. A missing
   content key fails.
@@ -954,7 +959,7 @@ authoritative list.
 | `--output` | `-o` | Output directory for this run. |
 | `--split-audio` / `--merge-video` / `--no-mux` | | Muxing behaviour. |
 | `--postscript` / `--no-postscript` | | Run a command after each output file, or run none. |
-| `--proxy` / `--no-proxy` / `--no-proxy-download` | | Proxy control. |
+| `--proxy` / `--no-proxy` / `--no-proxy-download` / `--proxy-download` | | Proxy control. |
 | `--workers` / `--downloads` / `--slow` | | Concurrency and pacing. |
 | `--list` / `--list-titles` / `--skip-dl` | | Dry runs. |
 | `--cdm-only` / `--vaults-only` | | Content key source control. |

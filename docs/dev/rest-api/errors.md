@@ -96,7 +96,7 @@ but the defaults hold for the overwhelming majority of responses.
 |---|---|---|
 | `INVALID_INPUT` | 400 | A required field is missing, or the request body could not be parsed. Also used as the generic "your input was malformed" code. |
 | `INVALID_SERVICE` | 400 | The named service is unknown, or is not permitted for your API key. |
-| `INVALID_PROXY` | 400 | The supplied proxy specification could not be resolved or is malformed. |
+| `INVALID_PROXY` | 400 | The supplied proxy specification could not be resolved or is malformed, or the proxy failed the [exit check](../../guide/proxies-and-vpn.md#exit-check). |
 | `INVALID_PARAMETERS` | 400 | One or more download or query parameters failed validation (bad codec, bitrate, sort field, and so on). |
 | `AUTH_FAILED` | 401 | Authentication with the streaming service failed (bad credentials or cookies). |
 | `FORBIDDEN` | 403 | The action is not allowed. Raised by server-side gates (per-key restrictions on CDM or credential overrides) and by remote session IP binding. |
@@ -152,7 +152,7 @@ The classification is keyword-based, checked in order:
 |---|---|---|
 | `auth`, `login`, `credential`, `unauthorized`, `forbidden`, `token` | `AUTH_FAILED` (401) | no |
 | `connection`, `timeout`, `network`, `unreachable`, `socket`, `dns`, `resolve` (or `ConnectionError`, `TimeoutError`, `URLError`, `SSLError`) | `NETWORK_ERROR` (503) | yes |
-| `geofence`, `region`, `not available in`, `territory` | `GEOFENCE` (403) | no |
+| `geofence`, `geoblock`, `region`, `not available in`, `territory` | `GEOFENCE` (403) | no |
 | `not found`, `404`, `does not exist`, `invalid id` | `NOT_FOUND` (404) | no |
 | `rate limit`, `too many requests`, `429`, `throttle` | `RATE_LIMITED` (429) | yes |
 | `drm`, `license`, `widevine`, `playready`, `decrypt` | `DRM_ERROR` (502) | no |

@@ -141,6 +141,7 @@ curl "$BASE/api/services" \
       "tag": "EXAMPLE",
       "aliases": ["EX"],
       "geofence": [],
+      "geoblock": [],
       "title_regex": null,
       "url": "https://example.com",
       "help": "EXAMPLE service documentation...",
@@ -193,7 +194,7 @@ curl -X POST "$BASE/api/download" \
         "service": "EXAMPLE",
         "title_id": "12345",
         "quality": [1080],
-        "vcodec": "H265",
+        "vcodec": "HEVC",
         "range": ["SDR"],
         "wanted": ["S01E01", "S01E02"]
       }'

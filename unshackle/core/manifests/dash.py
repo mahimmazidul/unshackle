@@ -27,6 +27,7 @@ from unshackle.core.config import config
 from unshackle.core.constants import DOWNLOAD_CANCELLED, DOWNLOAD_LICENCE_ONLY, AnyTrack
 from unshackle.core.drm import DRM_T, ClearKeyCENC, PlayReady, Widevine
 from unshackle.core.drm.segment_decrypt import SegmentDecrypter, can_use
+from unshackle.core.drm.verify import decrypt_track
 from unshackle.core.events import events
 from unshackle.core.session import RnetSession
 from unshackle.core.tracks import Audio, DownloadContext, Subtitle, Tracks, Video, resume
@@ -426,7 +427,7 @@ class DASH:
                     try:
                         track.drm = [Widevine.from_init_data(init_data)]
                     except Widevine.Exceptions.PSSHNotFound:
-                        log.warning("No PlayReady or Widevine PSSH was found for this track, is it DRM free?")
+                        log.debug("No PlayReady or Widevine PSSH was found for this track, is it DRM free?")
             else:
                 try:
                     track.drm = [Widevine.from_init_data(init_data)]
@@ -434,7 +435,7 @@ class DASH:
                     try:
                         track.drm = [PlayReady.from_init_data(init_data)]
                     except PlayReady.Exceptions.PSSHNotFound:
-                        log.warning("No Widevine or PlayReady PSSH was found for this track, is it DRM free?")
+                        log.debug("No Widevine or PlayReady PSSH was found for this track, is it DRM free?")
 
         if track.drm:
             track_kid = track_kid or track.get_key_id(url=segments[0][0], session=session)
@@ -643,8 +644,7 @@ class DASH:
 
         if drm:
             progress(downloaded="Decrypting", completed=0, total=None)
-            if not decrypter:
-                drm.decrypt(save_path)
+            decrypt_track(drm, save_path, license_widevine, decrypt=not decrypter)
             assert_fragments_decrypted(save_path)
             track.drm = None
             events.emit(events.Types.TRACK_DECRYPTED, track=track, drm=drm, segment=None)

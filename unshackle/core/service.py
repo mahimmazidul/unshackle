@@ -38,10 +38,10 @@ from unshackle.core.session import (
     RETRY_METHODS,
     STATUS_FORCELIST,
 )
-from unshackle.core.title_cacher import TitleCacher, get_account_hash, get_region_from_proxy
+from unshackle.core.title_cacher import TitleCacher, get_account_hash
 from unshackle.core.titles import Title_T, Titles_T, remap_titles
 from unshackle.core.utilities import declared_kwargs
-from unshackle.core.utils.ip_info import get_ip_info
+from unshackle.core.utils.ip_info import get_ip_info, verify_proxy_exit
 from unshackle.core.utils.redact import mask_proxy
 
 # Default (connect, read) timeout for the requests path, mirroring RnetSession's
@@ -159,6 +159,7 @@ class Service(metaclass=ABCMeta):
 
     ALIASES: tuple[str, ...] = ()  # alternative tags for the service, matched without case.
     GEOFENCE: tuple[str, ...] = ()  # list of ip regions required to use the service. empty list == no specific region.
+    GEOBLOCK: tuple[str, ...] = ()  # ip regions where the service refuses to work; everything else is allowed.
     ANIME: bool = False  # service catalogue is anime; metadata lookups prefer AniList. Title.anime overrides per title.
     DAILY: bool = False  # catalog is daily/date-based. episodes are named by air date. Title.daily overrides per title.
     # vault namespace override; when set, key vault read/write uses this tag instead of the service's own.
@@ -195,6 +196,7 @@ class Service(metaclass=ABCMeta):
             best_available=bool(best_available),
         )
 
+        whose = "the server's" if ctx.parent and ctx.parent.params.get("served") else "your"
         if not ctx.parent or not ctx.parent.params.get("no_proxy"):
             if ctx.parent:
                 proxy = ctx.parent.params["proxy"]
@@ -258,13 +260,20 @@ class Service(metaclass=ABCMeta):
             if not proxy:
                 # don't override the explicit proxy set by the user, even if they may be geoblocked
                 with console.status("Checking if current region is Geoblocked...", spinner="dots"):
-                    if self.GEOFENCE:
+                    if self.GEOFENCE or self.GEOBLOCK:
                         try:
-                            current_region = get_ip_info(self.session)["country"].lower()
-                            if any(x.lower() == current_region for x in self.GEOFENCE):
+                            current_region = (get_ip_info(self.session) or {}).get("country", "").lower()
+                            if not current_region:
+                                self.log.warning(f"Could not find {whose} region, so the region check does not run")
+                            elif self.is_region_allowed(current_region):
                                 self.log.info("Service is not Geoblocked in your region")
+                            elif not (fence_targets := [x for x in self.GEOFENCE if self.is_region_allowed(x)]):
+                                raise click.ClickException(
+                                    f"Service is not available in {whose} region ({current_region.upper()}). "
+                                    "Pass --proxy with a proxy outside the blocked regions."
+                                )
                             else:
-                                requested_proxy = self.GEOFENCE[0]  # first is likely main region
+                                requested_proxy = fence_targets[0]  # first is likely main region
                                 self.log.info(
                                     f"Service is Geoblocked in your region, getting a Proxy to {requested_proxy}"
                                 )
@@ -278,11 +287,12 @@ class Service(metaclass=ABCMeta):
                                         f"No proxy available for {requested_proxy}. "
                                         f"Pass --proxy with a proxy in {requested_proxy}, or the request can fail."
                                     )
+                        except click.ClickException:
+                            raise
                         except Exception as e:
                             self.log.warning(f"Failed to check geofence: {e}")
-                            current_region = None
                     else:
-                        self.log.info("Service has no Geofence")
+                        self.log.info("Service has no region restrictions")
 
             if proxy:
                 self.session.proxies.update({"all": proxy})
@@ -290,13 +300,16 @@ class Service(metaclass=ABCMeta):
                 # requests authenticate from the credentials embedded in the proxy URL.
                 # A manual header here was malformed (no "Basic " scheme) and broke
                 # plaintext-http forward-proxy requests with HTTP 407.
-                # Always verify proxy IP - proxies can change exit nodes
-                try:
-                    proxy_ip_info = get_ip_info(self.session)
-                    self.current_region = proxy_ip_info.get("country", "").lower() if proxy_ip_info else None
-                except Exception as e:
-                    self.log.warning(f"Failed to verify proxy IP: {e}")
-                    self.current_region = get_region_from_proxy(proxy)
+                # Verify the proxy IP every time, because a proxy can change its exit node. A dead
+                # proxy fails here, not after every service request has used up its retries.
+                exit_region = verify_proxy_exit(self.session).get("country")
+                self.current_region = exit_region
+                # Only GEOBLOCK applies here: an explicit --proxy outside GEOFENCE stays the user's call.
+                if exit_region and any(x.lower() == exit_region.lower() for x in self.GEOBLOCK):
+                    raise click.ClickException(
+                        f"Service is not available in {whose} proxy's region ({exit_region.upper()}). "
+                        "Pass --proxy with a proxy outside the blocked regions."
+                    )
             else:
                 # No proxy, use cached IP info for title caching (non-critical)
                 try:
@@ -305,6 +318,19 @@ class Service(metaclass=ABCMeta):
                 except Exception as e:
                     self.log.debug(f"Failed to get cached IP info: {e}")
                     self.current_region = None
+
+    @classmethod
+    def is_region_allowed(cls, region: Optional[str]) -> bool:
+        """True when an exit IP in `region` (two-letter region code, any case) can use the service.
+
+        An unknown region (None or empty) is allowed, because there is nothing to compare.
+        """
+        if not region:
+            return True
+        region = region.lower()
+        if any(x.lower() == region for x in cls.GEOBLOCK):
+            return False
+        return not cls.GEOFENCE or any(x.lower() == region for x in cls.GEOFENCE)
 
     def get_tracks_for_variants(
         self,

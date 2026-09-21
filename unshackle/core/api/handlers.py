@@ -15,12 +15,13 @@ from http.cookiejar import CookieJar, MozillaCookieJar
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+import click
 from aiohttp import web
 
 from unshackle.core.api.compression import safe_inflate
-from unshackle.core.api.errors import APIError, APIErrorCode, handle_api_exception
+from unshackle.core.api.errors import APIError, APIErrorCode, categorize_exception, handle_api_exception
 from unshackle.core.api.input_bridge import AuthStatus, InputBridge
-from unshackle.core.api.sanitize import safe_cache_key, sanitize_log
+from unshackle.core.api.sanitize import MAX_SESSION_CACHE_KEYS, safe_cache_key, sanitize_log
 from unshackle.core.api.session_log import SessionLogBuffer, SessionLogMirror, capture_service_logs
 from unshackle.core.api.session_store import SessionStore
 from unshackle.core.cacher import Cacher
@@ -33,6 +34,7 @@ from unshackle.core.services import Services
 from unshackle.core.titles import Episode, Movie, Song, Title_T
 from unshackle.core.tracks import Audio, Subtitle, Tracks, Video
 from unshackle.core.utilities import declared_kwargs
+from unshackle.core.utils.click_types import AUDIO_CODEC_LIST, SUBTITLE_CODEC, VIDEO_CODEC_LIST
 from unshackle.core.utils.collections import ci_get
 from unshackle.core.utils.redact import REDACTED, URL_USERINFO_RE, redact_all, redact_secrets, redact_text
 
@@ -82,6 +84,7 @@ DEFAULT_DOWNLOAD_PARAMS = {
     "proxy": None,
     "no_proxy": False,
     "no_proxy_download": False,
+    "proxy_download": None,
     "no_folder": False,
     "no_source": False,
     "no_mux": False,
@@ -152,6 +155,13 @@ def load_full_cdm(service: str, profile: Optional[str], cdm_type: Optional[str] 
     if not cdm_name or not isinstance(cdm_name, str):
         return resolve_server_cdm(service, profile, cdm_type)
 
+    if cdm_type:
+        wanted = {"wv": "widevine", "widevine": "widevine", "pr": "playready", "playready": "playready"}.get(
+            cdm_type.lower()
+        )
+        if wanted and detect_cdm_type(cdm_name, app_config) not in (None, wanted):
+            return cdm_type_stub(wanted)
+
     try:
         return load_cdm(cdm_name, service_name=service)
     except Exception as exc:  # noqa: BLE001 - fall back to stub on load failure
@@ -206,7 +216,7 @@ def build_parent_ctx(
 
     parent = click.Context(dummy)
     parent.obj = ContextData(config=service_config, cdm=cdm, proxy_providers=proxy_providers, profile=profile)
-    params = {"proxy": proxy_param, "no_proxy": no_proxy}
+    params = {"proxy": proxy_param, "no_proxy": no_proxy, "served": True}
     if extra_params:
         params.update(extra_params)
     parent.params = params
@@ -356,8 +366,12 @@ def run_service_search(
     )
     service_module = Services.load(normalized_service)
 
+    from click import ClickException
+
     try:
         service_instance = instantiate_service(parent_ctx, service_module, query)
+    except (ConnectionError, ClickException) as exc:
+        raise categorize_exception(exc, {"service": normalized_service}) from exc
     except Exception as exc:
         raise APIError(
             APIErrorCode.SERVICE_ERROR,
@@ -1097,7 +1111,6 @@ def drm_preference_name(track: Any) -> Optional[str]:
 
 
 MANIFEST_DATA_KEYS = ("hls", "dash", "ism")
-MAX_SESSION_CACHE_KEYS = 64
 
 
 def serialize_track_data(track: Any) -> Optional[Dict[str, Any]]:
@@ -1501,24 +1514,23 @@ async def list_tracks_handler(data: Dict[str, Any], request: Optional[web.Reques
         )
 
 
-VALID_VCODECS = ["H264", "H265", "H.264", "H.265", "AVC", "HEVC", "VC1", "VC-1", "VP8", "VP9", "AV1"]
-VALID_ACODECS = [
-    "AAC",
-    "AC3",
-    "EC3",
-    "EAC3",
-    "DD",
-    "DD+",
-    "AC4",
-    "OPUS",
-    "FLAC",
-    "ALAC",
-    "VORBIS",
-    "OGG",
-    "DTS",
-    "DTSX",
-    "DTS-X",
-]
+VALID_VCODECS = [choice.upper() for choice in VIDEO_CODEC_LIST.choices]
+VALID_ACODECS = [choice.upper() for choice in AUDIO_CODEC_LIST.choices]
+VALID_SUB_FORMATS = [choice.upper() for choice in SUBTITLE_CODEC.choices]
+
+
+def resolve_vcodec(value: Any) -> Optional[list]:
+    """Map a client's vcodec field to codec enums.
+
+    Session routes do not run validate_download_parameters, so this must answer junk with a 400
+    instead of letting click's UsageError surface as a 500.
+    """
+    if not value:
+        return None
+    try:
+        return VIDEO_CODEC_LIST.convert(value) or None
+    except click.UsageError as e:
+        raise APIError(APIErrorCode.INVALID_INPUT, f"Invalid vcodec: {e.format_message()}")
 
 
 def check_codec(value: Any, allowed: List[str], name: str) -> Optional[str]:
@@ -1578,9 +1590,8 @@ def validate_download_parameters(data: Dict[str, Any]) -> Optional[str]:
             return err
 
     if "sub_format" in data and data["sub_format"]:
-        valid_sub_formats = ["SRT", "VTT", "ASS", "SSA", "TTML", "STPP", "WVTT", "SMI", "SUB", "MPL2", "TMP"]
-        if data["sub_format"].upper() not in valid_sub_formats:
-            return f"Invalid sub_format: {data['sub_format']}. Must be one of: {', '.join(valid_sub_formats)}"
+        if str(data["sub_format"]).upper() not in VALID_SUB_FORMATS:
+            return f"Invalid sub_format: {data['sub_format']}. Must be one of: {', '.join(VALID_SUB_FORMATS)}"
 
     if "vbitrate" in data and data["vbitrate"] is not None:
         if not isinstance(data["vbitrate"], int) or data["vbitrate"] <= 0:
@@ -1694,8 +1705,18 @@ def enforce_download_gates(params: Dict[str, Any], request: Optional[web.Request
             "Download jobs license with the server CDM, which is not enabled for this key on this service.",
         )
 
+    if params.get("proxy_download") is not None and not isinstance(params["proxy_download"], str):
+        raise APIError(APIErrorCode.INVALID_INPUT, "proxy_download must be a string.")
+
     if not server_proxy_allowed(request):
         resolve_handler_proxy(params, params.get("service") or "", request)
+        if params.get("proxy_download"):
+            # the download proxy is gated like the main one: a full URI or nothing, never a server provider
+            resolve_handler_proxy(
+                {**params, "proxy": params["proxy_download"], "client_region": None},
+                params.get("service") or "",
+                request,
+            )
 
     requested_cdm = params.get("cdm")
     if requested_cdm:
@@ -2113,6 +2134,7 @@ async def dashboard_services_handler(request: web.Request) -> web.Response:
             "jobs": jobs.get(tag, 0),
             "aliases": list(services_module.ALIASES.get(tag, ())),
             "geofence": [],
+            "geoblock": [],
         }
         if staged:
             # Only staged tags need a git call; the working tree already holds the new commit.
@@ -2123,6 +2145,7 @@ async def dashboard_services_handler(request: web.Request) -> web.Response:
         module = services_module.MODULES.get(tag)
         if module is not None:
             row["geofence"] = list(getattr(module, "GEOFENCE", ()) or ())
+            row["geoblock"] = list(getattr(module, "GEOBLOCK", ()) or ())
         rows.append(row)
     return web.json_response(rows)
 
@@ -2276,6 +2299,16 @@ def run_health_checks(checks: Optional[List[Dict[str, Any]]] = None) -> List[Dic
             return "ok", str(vault)
 
         checks.append(health_check(f"vault:{name}", f"vault {name}", vault_probe, config_secrets(vault_config)))
+
+    def bad_keys_probe() -> tuple[str, str]:
+        if not config.key_vaults:
+            return "ok", "no vaults configured"
+        local = [v.get("name") or v["type"] for v in config.key_vaults if v.get("type") == "SQLite"]
+        if local:
+            return "ok", f"flags stored in {', '.join(local)}"
+        return "warn", "no SQLite vault, so a content key a client proves wrong cannot be flagged"
+
+    checks.append(health_check("bad_keys", "bad content key flags", bad_keys_probe))
 
     def proxy_probe() -> tuple[str, str]:
         providers = initialize_proxy_providers(raise_errors=True, quiet=True)
@@ -2722,14 +2755,13 @@ async def clear_temp_handler(request: Optional[web.Request] = None) -> web.Respo
 
 async def refresh_services_handler(request: Optional[web.Request] = None) -> web.Response:
     """Refresh the service repos configured in directories.services and reload the changed services."""
-    from unshackle.core.api.download_manager import get_download_manager
+    from unshackle.core.api.download_manager import busy_services
     from unshackle.core.api.events import publish_refresh_events
     from unshackle.core.services import refresh_and_reload
 
     require_admin(request)
     try:
-        busy = get_download_manager().busy_services()
-        repos = await asyncio.to_thread(refresh_and_reload, busy)
+        repos = await asyncio.to_thread(refresh_and_reload, busy_services())
         publish_refresh_events(repos)
         return web.json_response({"refreshed": all(r["updated"] for r in repos), "repos": repos})
 
@@ -2823,6 +2855,7 @@ def create_service_instance(
     proxy_providers: list,
     profile: Optional[str],
     server_account: bool = False,
+    server_cdm: bool = False,
 ) -> Any:
     """Make a service instance and resolve its credentials and cookies.
 
@@ -2836,7 +2869,7 @@ def create_service_instance(
     from unshackle.core.tracks import Video
 
     service_config = load_service_yaml(normalized_service)
-    cdm = load_full_cdm(normalized_service, profile, data.get("cdm_type"))
+    cdm = load_full_cdm(normalized_service, profile, None if server_cdm else data.get("cdm_type"))
 
     # Reconstruct enum track-selection params from client data so service code that reads
     # ctx.parent.params (Service.__init__ proxy/range/vcodec/best_available block) sees enums.
@@ -2851,16 +2884,7 @@ def create_service_instance(
                 pass
         range_values = range_values or None
 
-    vcodec_names = data.get("vcodec")
-    vcodec_values: Optional[list] = None
-    if vcodec_names:
-        vcodec_values = []
-        for name in vcodec_names:
-            try:
-                vcodec_values.append(Video.Codec[name])
-            except KeyError:
-                pass
-        vcodec_values = vcodec_values or None
+    vcodec_values = resolve_vcodec(data.get("vcodec"))
 
     extra_params = {
         "range_": range_values,
@@ -2947,22 +2971,27 @@ async def session_create_handler(data: Dict[str, Any], request: Optional[web.Req
             if region is not None and not (isinstance(region, str) and re.fullmatch(r"[A-Za-z]{2}", region)):
                 raise APIError(APIErrorCode.INVALID_INPUT, "proxy_region must be a two-letter country code.")
             if region is None and data.get("no_proxy"):
-                region = server_region()
+                region = await asyncio.to_thread(server_region)
             profile = next_server_profile(normalized_service, region)
             log.info(f"Using server account '{sanitize_log(profile or 'default')}' for {normalized_service}")
 
         log_buffer = None if server_account else SessionLogBuffer()
         service_class_name = getattr(Services.load(normalized_service), "__name__", normalized_service)
-        with capture_service_logs(service_class_name, log_buffer):
-            service_instance, cookies, credential = create_service_instance(
-                normalized_service,
-                title_id,
-                data,
-                proxy_param,
-                proxy_providers,
-                profile,
-                server_account=server_account,
-            )
+
+        def build_service() -> Any:
+            with capture_service_logs(service_class_name, log_buffer):
+                return create_service_instance(
+                    normalized_service,
+                    title_id,
+                    data,
+                    proxy_param,
+                    proxy_providers,
+                    profile,
+                    server_account=server_account,
+                    server_cdm=server_cdm_allowed(request, normalized_service),
+                )
+
+        service_instance, cookies, credential = await asyncio.to_thread(build_service)
         if log_buffer:
             service_instance.log = SessionLogMirror(service_instance.log, log_buffer)
 
@@ -2988,7 +3017,12 @@ async def session_create_handler(data: Dict[str, Any], request: Optional[web.Req
                 if not isinstance(content, str):
                     raise APIError(APIErrorCode.INVALID_INPUT, "cache values must be base64 strings")
                 decompressed = safe_inflate(base64.b64decode(content)).decode("utf-8")
-                (cache_dir / safe_name).with_suffix(".json").write_text(decompressed, encoding="utf-8")
+                target = cache_dir / f"{safe_name}.json"
+                try:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(decompressed, encoding="utf-8")
+                except OSError as e:
+                    log.warning(f"Skipping session cache key {sanitize_log(key)}: {e}")
 
         bridge = InputBridge()
         service_instance._input_bridge = bridge
@@ -3003,7 +3037,9 @@ async def session_create_handler(data: Dict[str, Any], request: Optional[web.Req
             server_account=(profile or "default") if server_account else None,
         )
         session.cache_tag = session_cache_tag
-        session.client_auth = not server_account and (cookies is not None or credential is not None)
+        session.client_auth = not server_account and (
+            cookies is not None or credential is not None or bool(cache_data and session_cache_tag)
+        )
         # Echoed to every dashboard viewer, so cap what an arbitrary client can push into it.
         if isinstance(data.get("client"), dict) and len(json.dumps(data["client"], default=str)) <= 4096:
             session.client = data["client"]
@@ -3014,6 +3050,8 @@ async def session_create_handler(data: Dict[str, Any], request: Optional[web.Req
         async def run_auth() -> None:
             try:
                 await asyncio.to_thread(service_instance.authenticate, cookies, credential)
+                if bridge.answered and not server_account:
+                    session.client_auth = True
                 session.auth_status = AuthStatus.AUTHENTICATED
                 bridge.status = AuthStatus.AUTHENTICATED
             except (Exception, SystemExit) as e:
@@ -3021,6 +3059,9 @@ async def session_create_handler(data: Dict[str, Any], request: Optional[web.Req
                 session.auth_status = AuthStatus.FAILED
                 session.auth_error = redact_secrets(str(e))
                 bridge.status = AuthStatus.FAILED
+            finally:
+                if store.peek(session_id) is not session:
+                    SessionStore.cleanup_cache_dir(session_cache_tag)
 
         asyncio.create_task(run_auth())
 
@@ -3448,7 +3489,8 @@ async def session_prompt_post_handler(
     if bridge is None or bridge.status != AuthStatus.PENDING_INPUT:
         raise APIError(APIErrorCode.INVALID_INPUT, "No prompt pending for this session")
 
-    bridge.submit_response(str(response_text))
+    if not bridge.submit_response(str(response_text)):
+        raise APIError(APIErrorCode.INVALID_INPUT, "No prompt pending for this session")
     return web.json_response({"status": "accepted"})
 
 
@@ -3574,6 +3616,15 @@ def resolve_handler_proxy(
         except Exception as e:
             log.debug(f"Server region lookup failed: {e!r}")
             server_region = None
+
+        geoblock = getattr(Services.load(normalized_service), "GEOBLOCK", ()) or ()
+        if client_region.lower() in {x.lower() for x in geoblock}:
+            raise APIError(
+                APIErrorCode.GEOFENCE,
+                f"Service is not available in your region ({client_region.upper()}). "
+                "Pass --proxy with a proxy outside the blocked regions.",
+                details={"service": normalized_service},
+            )
 
         in_client_region = bool(server_region) and server_region == client_region.lower()
         if not allowed:
@@ -3774,10 +3825,11 @@ def load_server_vaults(service_name: str) -> Any:
     return vaults
 
 
-def check_vaults(kids: list, service_name: str) -> Optional[Dict[str, str]]:
+def check_vaults(kids: list, service_name: str) -> Optional[tuple[Dict[str, str], Dict[str, str]]]:
     """Examine the server vaults for existing content keys that match all KIDs.
 
-    Returns a `KID:KEY` dict if ALL KIDs are found, None otherwise.
+    Returns `(KID:KEY, KID:vault name)` if ALL KIDs are found, None otherwise. The vault
+    name travels to the client, which is the only side that can prove the content key decrypts.
     """
     from uuid import UUID
 
@@ -3786,16 +3838,18 @@ def check_vaults(kids: list, service_name: str) -> Optional[Dict[str, str]]:
         if not vaults.vaults:
             return None
         keys: Dict[str, str] = {}
+        sources: Dict[str, str] = {}
         for kid in kids:
             kid_uuid = kid if isinstance(kid, UUID) else UUID(hex=str(kid))
             content_key, vault_used = vaults.get_key(kid_uuid)
             if content_key:
                 keys[kid_uuid.hex] = content_key
+                sources[kid_uuid.hex] = vault_used.name if vault_used else "unknown"
             else:
                 return None
         if keys:
             log.info(f"Vault hit: {len(keys)} key(s) from server vaults, skipping CDM")
-            return keys
+            return keys, sources
     # vault lookup is a best-effort shortcut before the CDM; any failure falls through to licensing
     except Exception as e:
         log.debug(f"Server vault lookup failed: {e!r}")
@@ -3893,8 +3947,13 @@ def handle_single_server_cdm(
     pssh_b64: Optional[str],
     drm_type: str,
     request: Optional[web.Request],
+    sources: Optional[Dict[str, str]] = None,
 ) -> Dict[str, str]:
-    """Do the single-track server_cdm licensing with the DRM class get_content_keys() flow."""
+    """Do the single-track server_cdm licensing with the DRM class get_content_keys() flow.
+
+    ``sources`` is filled with the vault name for every returned content key a server vault
+    supplied. A content key the CDM licensed gets no entry.
+    """
     import base64
 
     from unshackle.core.cdm import load_cdm
@@ -3949,8 +4008,11 @@ def handle_single_server_cdm(
         # harvest server-side keys from the vault fallback below.
         device_name = resolve_device_name(user_config, drm_type, service.__class__.__name__)
 
-        vault_keys = check_vaults(wv_drm.kids, service.__class__.__name__)
-        if vault_keys:
+        vault_hit = check_vaults(wv_drm.kids, service.__class__.__name__)
+        if vault_hit:
+            vault_keys, vault_sources = vault_hit
+            if sources is not None:
+                sources.update(vault_sources)
             return vault_keys
 
         cdm = load_cdm(device_name, service_name=service.__class__.__name__)
@@ -3994,24 +4056,34 @@ def handle_proxy_license(
         raise APIError(APIErrorCode.INVALID_INPUT, "Missing required parameter: challenge")
     challenge_bytes = base64.b64decode(challenge_b64)
 
-    if drm_type == "widevine":
-        license_response = service.get_widevine_license(
-            **declared_kwargs(
-                service.get_widevine_license, {"challenge": challenge_bytes, "title": title, "track": track}
-            )
-        )
-    elif drm_type == "playready":
-        license_response = service.get_playready_license(
-            **declared_kwargs(
-                service.get_playready_license, {"challenge": challenge_bytes, "title": title, "track": track}
-            )
-        )
-    else:
+    if drm_type not in ("widevine", "playready"):
         raise APIError(
             APIErrorCode.INVALID_PARAMETERS,
             f"Unsupported DRM type: {drm_type}",
             details={"drm_type": drm_type, "supported": ["widevine", "playready"]},
         )
+
+    # A service raises when the upstream licence server rejects the challenge.
+    # Surface it as a structured licence error, not an uncaught 500 the edge turns into a 502.
+    try:
+        if drm_type == "widevine":
+            license_response = service.get_widevine_license(
+                **declared_kwargs(
+                    service.get_widevine_license, {"challenge": challenge_bytes, "title": title, "track": track}
+                )
+            )
+        else:
+            challenge_str = challenge_bytes.decode("utf-8", errors="replace")
+            license_response = service.get_playready_license(
+                **declared_kwargs(
+                    service.get_playready_license, {"challenge": challenge_str, "title": title, "track": track}
+                )
+            )
+    except APIError:
+        raise
+    except (Exception, SystemExit) as exc:
+        log.exception(f"{sanitize_log(drm_type)} licence request failed for the proxied challenge")
+        raise APIError(APIErrorCode.SERVICE_ERROR, f"Licence request failed: {exc}") from None
 
     if isinstance(license_response, str):
         license_response = license_response.encode("utf-8")
@@ -4106,8 +4178,11 @@ async def session_license_handler(
         config_cdm_type = detect_cdm_type_for_service(service_tag, app_config)
 
         all_keys: Dict[str, Dict[str, str]] = {}
+        vault_keys: list[str] = []
+        clear_tracks: list[str] = []
         drm_types: Dict[str, str] = {}
         keys_by_pssh: Dict[tuple, Dict[str, str]] = {}
+        sources_by_pssh: Dict[tuple, Dict[str, str]] = {}
         drm_type_by_pssh: Dict[tuple, str] = {}
         actual_drm_type: Optional[str] = None
 
@@ -4155,8 +4230,11 @@ async def session_license_handler(
             cache_key = (pssh_str, pssh_set(track))
             if cache_key not in keys_by_pssh:
                 keys_by_pssh[cache_key] = {}
+                sources_by_pssh[cache_key] = {}
                 try:
-                    keys = handle_single_server_cdm(service, title, track, pssh_str, candidate, request)
+                    keys = handle_single_server_cdm(
+                        service, title, track, pssh_str, candidate, request, sources_by_pssh[cache_key]
+                    )
                     if keys:
                         keys_by_pssh[cache_key] = keys
                         drm_type_by_pssh[cache_key] = candidate
@@ -4175,7 +4253,8 @@ async def session_license_handler(
             init_data = fetch_init_segment(track, svc_session)
             ensure_track_drm(track, svc_session, init_data)
             if not track.drm:
-                warn(f"Track {sanitize_log(tid[:12])} carries no DRM, so it has no keys to resolve")
+                log.info(f"Track {sanitize_log(tid[:12])} carries no DRM, so it has no keys to resolve")
+                clear_tracks.append(tid)
                 continue
 
             title = find_title_for_track(tid, session)
@@ -4220,18 +4299,26 @@ async def session_license_handler(
                         f"{sanitize_log(tid[:12])}, tried the init segment PSSH"
                     )
                 if track_kid.hex in init_keys:
-                    keys, track_drm_type = init_keys, init_drm_type
+                    keys, track_drm_type, pssh_str = init_keys, init_drm_type, init_pssh
                 else:
                     track.drm = manifest_drm
                     warn(f"No content key for KID {track_kid.hex} of track {sanitize_log(tid[:12])}")
 
             if keys:
                 all_keys[tid] = keys
+                sources = sources_by_pssh.get((pssh_str, pssh_set(track)), {}) if pssh_str is not None else {}
+                note_served_keys(session, keys, sources)
+                if sources:
+                    vault_keys.extend(sources)
             if keys and track_drm_type:
                 drm_types[tid] = track_drm_type
                 actual_drm_type = track_drm_type
 
         response: Dict[str, Any] = {"keys": all_keys}
+        if clear_tracks:
+            response["clear_tracks"] = clear_tracks
+        if vault_keys:
+            response["vault_keys"] = vault_keys
         if actual_drm_type:
             response["drm_type"] = actual_drm_type
         if drm_types:
@@ -4261,9 +4348,11 @@ async def session_license_handler(
                 track.pr_pssh = pssh_b64
 
         if mode == "server_cdm":
-            keys = handle_single_server_cdm(service, title, track, pssh_b64, drm_type, request)
+            key_sources: Dict[str, str] = {}
+            keys = handle_single_server_cdm(service, title, track, pssh_b64, drm_type, request, key_sources)
             log.info(f"Server CDM resolved {len(keys)} key(s) for track {sanitize_log(track_id[:12])}")
-            return web.json_response({"keys": keys})
+            note_served_keys(session, keys, key_sources)
+            return web.json_response({"keys": keys, "vault_keys": list(key_sources)})
 
         return handle_proxy_license(service, title, track, challenge_b64, drm_type)
 
@@ -4284,6 +4373,56 @@ async def session_license_handler(
             },
             debug_mode=debug_mode,
         )
+
+
+def note_served_keys(session: Any, keys: Dict[str, str], sources: Dict[str, str]) -> None:
+    """Remember every KID:KEY the remote session handed out and which server vault supplied it.
+
+    The vault name stays on the server: a bad-key report names only the pair, and the
+    server looks the source up here to flag its own row.
+    """
+    for kid, key in keys.items():
+        session.served_keys[kid] = (key, sources.get(kid, "cdm"))
+
+
+async def session_bad_key_handler(
+    data: Dict[str, Any], session_id: str, request: Optional[web.Request] = None
+) -> web.Response:
+    """Flag a server-vault content key the client proved wrong, so the next licence reaches the CDM.
+
+    The server never sees a segment, so the client is the only side that can test a content key.
+    Only a pair this remote session served can be flagged, which keeps a client from
+    poisoning the bad-key table for content keys it never received.
+    """
+    from uuid import UUID
+
+    session = await get_validated_session(session_id, request)
+    require_authenticated(session)
+
+    kid = str(data.get("kid") or "").replace("-", "").lower()
+    key = str(data.get("key") or "").lower()
+    served_key, source = session.served_keys.get(kid, ("", ""))
+    if not key or served_key.lower() != key:
+        log.warning(f"Session {sanitize_log(session_id[:12])} reported a bad content key it was never served: {kid}")
+        raise APIError(APIErrorCode.INVALID_INPUT, "This session was not served that KID:KEY pair")
+
+    vaults = load_server_vaults(session.service_instance.__class__.__name__)
+
+    def flag() -> None:
+        for vault in vaults.vaults:
+            if not vault.local and vault.name != source:
+                continue
+            try:
+                vault.flag_bad_key(vaults.service, UUID(hex=kid), served_key, source)
+            except Exception as e:
+                log.debug(f"Could not flag {kid} as bad in vault {sanitize_log(vault.name)}: {e!r}")
+
+    await asyncio.to_thread(flag)
+    session.served_keys.pop(kid, None)
+    log.warning(
+        f"Client proved {kid}:{served_key} from vault {sanitize_log(source)} wrong, flagged in the server vaults"
+    )
+    return web.json_response({"flagged": True})
 
 
 async def session_info_handler(session_id: str, request: Optional[web.Request] = None) -> web.Response:
@@ -4323,12 +4462,14 @@ async def session_delete_handler(session_id: str, request: Optional[web.Request]
     if cache_tag and session.client_auth:
         cache_dir = app_config.directories.cache / cache_tag
         if cache_dir.is_dir():
-            for f in cache_dir.glob("*.json"):
-                if not f.stem.startswith("titles_"):
-                    try:
-                        cache_data[f.stem] = base64.b64encode(zlib.compress(f.read_bytes())).decode("ascii")
-                    except OSError:
-                        pass
+            for f in sorted(cache_dir.rglob("*.json")):
+                key = f.relative_to(cache_dir).as_posix()[: -len(".json")]
+                if f.stem.startswith("titles_") or not safe_cache_key(key):
+                    continue
+                try:
+                    cache_data[key] = base64.b64encode(zlib.compress(f.read_bytes())).decode("ascii")
+                except OSError:
+                    pass
 
     await store.delete(session_id)
 

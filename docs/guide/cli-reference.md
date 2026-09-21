@@ -69,8 +69,8 @@ unshackle dl [OPTIONS] SERVICE [SERVICE ARGS...]
 |---|---|---|
 | `-p`, `--profile` | - | Profile for credentials and cookies. |
 | `-q`, `--quality` | best | Resolution(s), comma-separated, e.g. `1080,720`. `-q 1080` also matches anamorphic tracks by 16:9 canvas. |
-| `-v`, `--vcodec` | any | Video codec(s). Accepts names or values: `AVC`/`H.264`, `HEVC`/`H.265`, `VC1`, `VP8`, `VP9`, `AV1`. |
-| `-a`, `--acodec` | any | Audio codec(s), comma-separated. Accepts `AAC`, `AC3`/`DD`, `EC3`/`DD+`/`eac3`/`ddp`, `AC4`, `OPUS`, `OGG`/`vorbis`, `DTS`, `DTSX`/`DTS-X`, `ALAC`, `FLAC`. |
+| `-v`, `--vcodec` | any | Video codec(s). Accepts names or values: `AVC`/`H.264`/`H264`, `HEVC`/`H.265`/`H265`, `VC1`/`VC-1`, `VP8`, `VP9`, `AV1`. |
+| `-a`, `--acodec` | any | Audio codec(s), comma-separated. Accepts `AAC`, `AC3`/`DD`, `EC3`/`DD+`/`eac3`/`ddp`, `AC4`/`AC-4`, `OPUS`, `OGG`/`VORB`/`vorbis`, `DTS`, `DTSX`/`DTS-X`, `ALAC`, `FLAC`. |
 | `-vb`, `--vbitrate` | highest | Exact video bitrate in kbps. |
 | `-ab`, `--abitrate` | highest | Exact audio bitrate in kbps. |
 | `-vb-range`, `--vbitrate-range` | - | Video bitrate range in kbps, e.g. `6000-7000`; picks highest within. Mutually exclusive with `--vbitrate`. |
@@ -141,7 +141,7 @@ Keep only certain track types, or skip certain track types.
 | Flag | Description |
 |---|---|
 | `--split-audio` | Write a separate output file per audio codec instead of merging. Defaults to config `muxing.merge_audio`. |
-| `--merge-video` | Mux all selected video tracks into one file. Defaults to config `muxing.merge_video`. |
+| `--merge-video` | Mux video tracks that share a height, range, and codec into one file, so only language varies inside a file. Defaults to config `muxing.merge_video`. |
 | `-o`, `--output` | Override the output directory for this run. |
 | `--no-folder` | Disable folder creation for TV shows. |
 | `--no-source` | Remove the source tag from the filename/path. |
@@ -198,6 +198,7 @@ order the service used, then renumbers the episodes into the order you asked for
 | `--proxy` | Proxy URI, a 2-letter country code resolved from configured providers, or `provider:region` (e.g. `nordvpn:ca`, `gluetun:us`, `protonvpn:de:berlin`). |
 | `--no-proxy` | Force-disable all proxy use. |
 | `--no-proxy-download` | Bypass the proxy for **all downloads** (manifest, licence, and auth stay proxied). |
+| `--proxy-download` | Use a different proxy for **all downloads**, in the same forms as `--proxy` (manifest, licence, and auth stay on `--proxy`). |
 | `--remote` | Use a remote unshackle server. |
 | `--server` | Name a remote server from the `remote_services` config. |
 

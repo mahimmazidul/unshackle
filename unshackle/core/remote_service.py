@@ -7,6 +7,7 @@ Everything else (track selection, download, decrypt, mux) runs locally.
 
 from __future__ import annotations
 
+import atexit
 import base64
 import hashlib
 import logging
@@ -18,8 +19,9 @@ from datetime import date as date_
 from enum import Enum
 from http.cookiejar import CookieJar
 from pathlib import Path
-from threading import Lock
-from typing import Any, Callable, Dict, Optional, Union
+from threading import Event, Lock, Thread
+from typing import Any, Callable, Dict, Iterator, Optional, Union
+from uuid import UUID
 
 import click
 import requests
@@ -41,6 +43,7 @@ from unshackle.core.tracks import Audio, Chapter, Chapters, Subtitle, Tracks, Vi
 from unshackle.core.tracks.attachment import Attachment
 from unshackle.core.tracks.track import Track
 from unshackle.core.utils.redact import redact_path, redact_text, safe_display_url
+from unshackle.core.vault import Vault
 
 log = logging.getLogger("remote_service")
 
@@ -717,6 +720,38 @@ def cache_stem_is_relevant(
     return not matched_foreign
 
 
+class ServerVault(Vault):
+    """The server's vaults as one source seen from the client: it can only be reported against.
+
+    ``decrypt_verified`` needs a Vault to hold in ``Vaults.sources`` so a server-supplied
+    content key gets the same decode check as a local vault key. The client never learns
+    which server vault answered and can neither read nor write it, so every method returns
+    nothing and a bad verdict goes to the server, which flags the row itself.
+    """
+
+    def __init__(self, service: "RemoteService"):
+        super().__init__("server_cdm", no_push=True)
+        self.service = service
+
+    def get_key(self, kid: Union[UUID, str], service: str) -> Optional[str]:
+        return None
+
+    def get_keys(self, service: str) -> Iterator[tuple[str, str]]:
+        return iter(())
+
+    def add_key(self, service: str, kid: Union[UUID, str], key: str) -> bool:
+        return False
+
+    def add_keys(self, service: str, kid_keys: dict[Union[UUID, str], str]) -> int:
+        return 0
+
+    def get_services(self) -> Iterator[str]:
+        return iter(())
+
+    def report_bad(self, kid: UUID, key: str) -> None:
+        self.service.report_bad_key(kid, key)
+
+
 class RemoteService:
     """Service adapter that proxies to a remote unshackle server.
 
@@ -726,6 +761,7 @@ class RemoteService:
 
     ALIASES: tuple[str, ...] = ()
     GEOFENCE: tuple[str, ...] = ()
+    GEOBLOCK: tuple[str, ...] = ()
     NO_SUBTITLES: bool = False
     ANIME: bool = False
     DAILY: bool = False
@@ -757,9 +793,12 @@ class RemoteService:
         self._chapters_by_title: Dict[str, list] = {}
         self._session_id: Optional[str] = None
         self._server_cdm_type: str = "widevine"
+        self.server_vault_keys: Dict[UUID, str] = {}
+        self.server_vault = ServerVault(self)
         self._segment_filters: Dict[str, tuple[set[str], set[str]]] = {}
         self._log_seq = 0
         self._log_drain_lock = Lock()
+        self._keepalive_stop = Event()
 
         self._session = requests.Session()
         self._session.headers.update(config.headers)
@@ -899,7 +938,7 @@ class RemoteService:
             create_data.update(self._service_params)
             create_data["service_params"] = self._service_params
 
-        cdm = self.ctx.obj.cdm if self.ctx.obj else None
+        cdm = self.ctx.obj.cdm if self.ctx.obj and not self._server_cdm else None
         if cdm is not None:
             from unshackle.core.cdm.detect import is_playready_cdm
 
@@ -922,11 +961,33 @@ class RemoteService:
 
         result = self.client.post("/api/session/create", create_data)
         self._session_id = result["session_id"]
+        atexit.register(self.close)
 
         status = result.get("status", "authenticated")
         if status == "authenticating":
             self.poll_auth_completion()
         self.drain_server_logs()
+        self.start_keepalive()
+
+    def start_keepalive(self) -> None:
+        """Send keep-alive requests so that a long download or mux operation does not outlive the server's idle TTL.
+
+        ``GET /api/session/{session_id}`` refreshes the idle timer and reports the TTL, so the thread sends
+        a request at an interval of one third of it. The thread stops when ``close()`` runs. A client that
+        dies stops sending requests, so the server still expires an abandoned remote session.
+        """
+        info = self.client.get_optional(f"/api/session/{self._session_id}")
+        interval = max(float(info.get("expires_in") or 300) / 3, 5.0)
+        url = f"{self.client.server_url}/api/session/{self._session_id}"
+
+        def ping() -> None:
+            while not self._keepalive_stop.wait(interval):
+                try:
+                    self.client.session.get(url, timeout=30)
+                except requests.RequestException:
+                    pass
+
+        Thread(target=ping, name=f"{self.service_tag}-keepalive", daemon=True).start()
 
     def drain_server_logs(self) -> None:
         """Fetch the service's server-side log records for this remote session and re-emit them locally.
@@ -1117,6 +1178,10 @@ class RemoteService:
                 )
             self.drain_server_logs()
             keys_by_track = resp.get("keys", {})
+            clear_tracks = set(resp.get("clear_tracks", []))
+            vault_kids = set(resp.get("vault_keys", []))
+            for track_keys in keys_by_track.values():
+                self.note_vault_keys(track_keys, vault_kids)
             server_drm_type = resp.get("drm_type", drm_type)
             drm_types_by_track = resp.get("drm_types", {})
             self._server_cdm_type = server_drm_type
@@ -1125,7 +1190,7 @@ class RemoteService:
             for track in title.tracks:
                 track_keys = keys_by_track.get(str(track.id), {})
                 if not track_keys:
-                    if str(track.id) in track_ids:
+                    if str(track.id) in track_ids and str(track.id) not in clear_tracks:
                         self.log.warning(f"Server CDM returned no content keys for track {track.id}")
                     continue
 
@@ -1143,6 +1208,22 @@ class RemoteService:
                 self.log.debug(f"Server CDM resolved {key_count} key(s) using {server_drm_type.upper()}")
         except Exception as e:
             self.log.warning("Failed to resolve server CDM keys: %s", e)
+
+    def note_vault_keys(self, keys: Dict[str, str], vault_kids: set[str]) -> None:
+        """Remember which of the served keys a server vault supplied, and forget the rest."""
+        for kid_hex, key in keys.items():
+            kid = UUID(hex=kid_hex)
+            if kid_hex in vault_kids:
+                self.server_vault_keys[kid] = key
+            else:
+                self.server_vault_keys.pop(kid, None)
+
+    def report_bad_key(self, kid: UUID, key: str) -> None:
+        """Tell the server a vault key it served did not decrypt, so it flags its own row."""
+        try:
+            self.client.post_optional(f"/api/session/{self._session_id}/keys/bad", {"kid": kid.hex, "key": key})
+        except Exception as e:
+            self.log.warning(f"Could not report the bad content key to the server: {e!r}")
 
     @staticmethod
     def create_drm_stub(drm_type: str, kid_hexes: list[str]) -> Any:
@@ -1263,6 +1344,7 @@ class RemoteService:
                         },
                     )
                     keys = resp.get("keys", {})
+                    self.note_vault_keys(keys, set(resp.get("vault_keys", [])))
                     if keys and track.drm:
                         for drm_obj in track.drm:
                             if hasattr(drm_obj, "content_keys"):
@@ -1305,13 +1387,16 @@ class RemoteService:
         pass
 
     def close(self) -> None:
-        if self._session_id:
+        self._keepalive_stop.set()
+        session_id, self._session_id = self._session_id, None
+        if session_id:
             try:
-                result = self.client.delete(f"/api/session/{self._session_id}")
+                result = self.client.delete(f"/api/session/{session_id}")
                 self.save_returned_cache(result.get("cache", {}))
+            except SystemExit:
+                pass
             except Exception as e:
                 self.log.warning(f"Failed to clean up remote session: {e}")
-            self._session_id = None
 
     def save_returned_cache(self, cache_data: Dict[str, str]) -> None:
         """Save cache files returned by the server to the local cache directory.
@@ -1324,7 +1409,11 @@ class RemoteService:
             return
 
         from unshackle.core.api.compression import safe_inflate
-        from unshackle.core.api.sanitize import safe_cache_key
+        from unshackle.core.api.sanitize import MAX_SESSION_CACHE_KEYS, safe_cache_key
+
+        if len(cache_data) > MAX_SESSION_CACHE_KEYS:
+            self.log.warning(f"Ignoring {len(cache_data)} cache files from server: more than {MAX_SESSION_CACHE_KEYS}")
+            return
 
         cache_dir = config.directories.cache / self.service_tag
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1336,7 +1425,10 @@ class RemoteService:
                 continue
             try:
                 decompressed = safe_inflate(base64.b64decode(content))
-                (cache_dir / safe_name).with_suffix(".json").write_bytes(decompressed)
+                # Not with_suffix: that would turn the key "keys.v2" into "keys.json".
+                target = cache_dir / f"{safe_name}.json"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(decompressed)
             except Exception as e:
                 self.log.warning(f"Failed to save returned cache file '{safe_name}': {e}")
 
@@ -1348,10 +1440,17 @@ class RemoteService:
         The client cannot rely on the server to filter, so it sends only the files
         it can tie to the active credential or profile, plus service-global state.
         At worst, a withheld file makes the server authenticate again.
+
+        Each cache key is the file path relative to the service cache directory,
+        with posix separators and no ``.json`` suffix, so it equals the ``Cacher``
+        cache key the service reads it with (``session_web/<sha1>``). The relevance check
+        runs on every path segment, because a service may embed the credential
+        digest or profile name in a directory name as well as in the basename.
         """
         import zlib
 
         from unshackle.commands.dl import dl
+        from unshackle.core.api.sanitize import safe_cache_key
 
         cache_dir = config.directories.cache / self.service_tag
         if not cache_dir.is_dir():
@@ -1366,13 +1465,14 @@ class RemoteService:
         foreign = set(profiles) - {active} if isinstance(profiles, dict) else set()
 
         files: Dict[str, str] = {}
-        for f in cache_dir.glob("*.json"):
-            if f.stem.startswith("titles_"):
+        for f in sorted(cache_dir.rglob("*.json")):
+            key = f.relative_to(cache_dir).as_posix()[: -len(".json")]
+            if f.stem.startswith("titles_") or not safe_cache_key(key):
                 continue
-            if not cache_stem_is_relevant(f.stem, allowed, active, foreign):
-                self.log.debug(f"Withholding cache file from the remote server: {f.stem}")
+            if not all(cache_stem_is_relevant(part, allowed, active, foreign) for part in key.split("/")):
+                self.log.debug(f"Withholding cache file from the remote server: {key}")
                 continue
-            files[f.stem] = base64.b64encode(zlib.compress(f.read_bytes())).decode("ascii")
+            files[key] = base64.b64encode(zlib.compress(f.read_bytes())).decode("ascii")
         return files
 
 

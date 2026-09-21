@@ -106,6 +106,7 @@ class ImportService:
 
     ALIASES: tuple[str, ...] = ()
     GEOFENCE: tuple[str, ...] = ()
+    GEOBLOCK: tuple[str, ...] = ()
     NO_SUBTITLES: bool = False
 
     def __init__(self, ctx: click.Context, service_tag: str, title: str, import_file: Optional[str]) -> None:
@@ -305,10 +306,11 @@ class ImportService:
         self.tracks_by_title[title_id] = tracks
         return tracks
 
-    def key_pool(self) -> dict[UUID, str]:
-        """All exported KID:KEY pairs across every title, as {UUID: key_hex}."""
+    def key_pool(self, title_id: Optional[str] = None) -> dict[UUID, str]:
+        """Exported KID:KEY pairs as {UUID: key_hex}, for one title or across every title."""
         pool: dict[UUID, str] = {}
-        for entry in self.titles_data.values():
+        entries = [self.titles_data.get(title_id, {})] if title_id else self.titles_data.values()
+        for entry in entries:
             for track_dict in (entry.get("tracks") or {}).values():
                 for kid_hex, key in (track_dict.get("keys") or {}).items():
                     pool[UUID(hex=kid_hex)] = key
@@ -347,7 +349,7 @@ class ImportService:
         which DASH.download_track preserves. decrypt() applies the content key whose KID
         matches the media.
         """
-        pool = self.key_pool()
+        pool = self.key_pool(str(title.id)) or self.key_pool()
         if not pool:
             return
 

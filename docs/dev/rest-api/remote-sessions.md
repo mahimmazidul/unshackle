@@ -124,11 +124,13 @@ hood the client walks a remote session through its lifecycle.
       the client region itself
     - Track-selection hints (`range_`, `vcodec`, `quality`, `best_available`) so
       the server fetches the right manifests
-    - Your local per-service **cache files** (e.g. refreshed tokens), but only the
-      files for the active profile. The client withholds a file whose name embeds
-      a hash of another credential, or the name of another profile. One profile's
-      tokens therefore never reach the server while you use a different profile.
-      At worst, a withheld file makes the server authenticate again
+    - Your local per-service **cache files** (e.g. refreshed tokens), including
+      files in subdirectories of the service cache directory, but only the files
+      for the active profile. The client withholds a file whose path, in any
+      directory or file name, embeds a hash of another credential or the name of
+      another profile. One profile's tokens
+      therefore never reach the server while you use a different profile. At
+      worst, a withheld file makes the server authenticate again
 
     The server uses its own accounts only when the operator lists the service in
     `serve.server_accounts` and gives your API key `server_accounts` in `serve.users`.
@@ -195,10 +197,16 @@ hood the client walks a remote session through its lifecycle.
 
 === "5. Download + close"
 
-    The client downloads, decrypts, and muxes locally. On completion it deletes
-    the remote session. If the server has updated cache files (for example a refreshed
-    token), the delete returns them and the client saves them locally, so the **next**
-    remote session can skip interactive auth.
+    The client downloads, decrypts, and muxes locally. While it works, it sends a
+    keep-alive request to the remote session at an interval of one third of
+    `session_ttl`, so a long download does not let the remote session expire. On
+    completion, and also when `dl` exits early (`--list`, Ctrl+C, an error), it
+    deletes the remote session. If the login belongs to the client, the `DELETE`
+    request returns the updated cache files (for example a refreshed token) and the
+    client saves them locally, so the **next** remote session can skip interactive
+    authentication. The login belongs to the client when the client sent
+    cookies, credentials, or cache files, or answered a login prompt (a device code
+    or an OTP) that led to a successful login. A server-account login never does.
 
 !!! tip "Renaming remote titles locally"
     You can rename titles for a remote service you do not have installed locally by
@@ -236,6 +244,17 @@ There are two ways DRM keys get resolved, chosen by the client's `server_cdm` fl
     - Enable with `server_cdm: true` in the server entry.
     - The server tells the client which DRM type it used
       (`widevine` or `playready`).
+    - A content key the server took from its own vault is unproven. The response
+      lists its KID in `vault_keys`, the client decrypts and checks that the output
+      decodes, and a wrong pair goes back to `POST /api/session/{id}/keys/bad`. The
+      server flags the pair in every local vault it holds, reports it to the vault
+      that served it, and the next licence for that KID skips the pair and reaches
+      the CDM. A server with no local SQLite vault cannot store the flag. The
+      server accepts a report only for a pair it served to that remote session. The
+      client never learns the server vault names.
+    - A content key in the client's own vaults goes first, even when the server
+      already answered. The client proves it, and a server key waits as the next
+      candidate.
 
 ---
 
@@ -313,6 +332,7 @@ The server mounts all these routes, even in `--remote-only` mode. Paths use the
 | `POST` | `/api/session/{id}/segments` | Resolve per-segment/track download descriptors |
 | `POST` | `/api/session/{id}/segment_filter` | Unwanted HLS segment URIs for one track (ads, bumpers) |
 | `POST` | `/api/session/{id}/license` | DRM licensing (proxy or server CDM) |
+| `POST` | `/api/session/{id}/keys/bad` | Report a server-vault content key that did not decrypt |
 | `GET` | `/api/session/{id}/logs` | Drain the service's server-side log output |
 | `GET` | `/api/session/{id}/prompt` | Poll interactive auth status / pending prompt |
 | `POST` | `/api/session/{id}/prompt` | Submit an answer to a pending prompt |
@@ -411,13 +431,28 @@ _sessions/<pbkdf2_hmac(sha256, X-Secret-Key, "unshackle-session-ns", 100000)[:12
 ```
 
 The handler writes forwarded `cache` files into that directory before authentication.
-On `DELETE`, the handler harvests updated cache files (compressing each with zlib
-and base64-encoding, **excluding** `titles_*` files) and returns them under a
-`cache` field, so the client can keep refreshed tokens:
+On `DELETE`, when the login belongs to the client (`client_auth`), the handler
+harvests updated cache files from the whole directory tree (compressing each
+with zlib and base64-encoding, **excluding** `titles_*` files) and returns them
+under a `cache` field, so the client can keep refreshed tokens. Each cache key
+is the file path relative to that directory, with `/` separators and no `.json`
+suffix, which is the `Cacher` cache key the service reads it with:
 
 ```json
-{ "status": "ok", "cache": { "tokens": "...base64(zlib(bytes))..." } }
+{
+  "status": "ok",
+  "cache": {
+    "tokens": "...base64(zlib(bytes))...",
+    "session_web/<sha1>": "...base64(zlib(bytes))..."
+  }
+}
 ```
+
+Both sides reject a cache key with a drive letter, a root, a `..` segment, an empty
+segment, or more than 8 segments before it becomes a path, so a peer cannot write
+outside the cache directory. Both sides also refuse a `cache` map with more than
+64 entries. The server skips a cache key it cannot write, such as one that names an
+existing file as a directory, and logs a warning.
 
 ### Remote session info response
 

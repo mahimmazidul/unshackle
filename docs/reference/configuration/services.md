@@ -121,11 +121,11 @@ is the [REST API](../../dev/rest-api/index.md) section. These are the config key
 | `services` | list | *(unset)* | Global service allowlist. Omit to allow all. |
 | `remote_only` | bool | `false` | Expose only the remote service session endpoints (health, services, search, session) and disable the rest of the REST API. |
 | `dashboard` | dict | *(unset)* | Developer dashboard: `key` is the API key for the read-only `/api/dashboard/` endpoints (status, remote sessions, remote session logs, jobs, keys, services, health, logs, SSE events). Unset leaves those routes unregistered. See [dashboard endpoints](../../dev/rest-api/dashboard.md). |
-| `session_ttl` | int (s) | `300` | Lifetime of an interactive auth session. |
+| `session_ttl` | int (s) | `300` | Seconds a remote session can stay idle before it expires. A remote client sends keep-alive requests to its remote session during a download, so the remote session does not expire during a long download. |
 | `max_sessions` | int or null | `100` | Maximum concurrent remote sessions; at the cap the server evicts the oldest. Set it to `null` or `0` for no limit, which is also what `/api/dashboard/status` then reports, so a dashboard can tell "no cap" from a cap that happens to sit at the default. |
 | `history_limit` | int | `100` | How many finished jobs to retain in history. |
 | `compression_level` | int | `1` | gzip level for responses. |
-| `services_refresh_interval` | int (s) | `0` | How often the server pulls the git-backed service repositories in `directories.services` and hot-reloads the services that changed. `0` turns it off. A service with a running or queued job swaps to the new code as soon as its last job finishes. |
+| `services_refresh_interval` | int (s) | `0` | How often the server pulls the git-backed service repositories in `directories.services` and hot-reloads the services that changed. `0` turns it off. A service with a running or queued job, or a live remote session, swaps to the new code as soon as its last job and session finish. |
 | `global_speed_limit` | str | *(unlimited)* | Server-wide download speed cap, e.g. `10M`, `1.5G` or plain bytes/sec (same format as `speed_limit`). One shared budget across all concurrent jobs; the server ignores per-job speed limits while it is set. |
 | `cdm_overrides` | list or bool | *(unset)* | Allowed per-request CDM overrides: a list of permitted device names, or `true` for any. Unset rejects every override. |
 | `allow_job_credentials` | bool | `false` | Permit clients to supply credentials per job. |

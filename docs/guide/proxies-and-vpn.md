@@ -22,13 +22,14 @@ a query to a real proxy URL: [basic static proxies](#basic-static-proxies),
 
 ## The `--proxy` flag
 
-Three options on the `dl` command control proxying at download time:
+Four options on the `dl` command control proxying at download time:
 
 | Option | Effect |
 |---|---|
 | `--proxy` | The proxy to use. Either an explicit URI, or a query that unshackle resolves against your configured providers. |
 | `--no-proxy` | Force **all** proxy use off. No providers are initialised and no proxy query is resolved. |
 | `--no-proxy-download` | Use the proxy for the manifest, licence, and authentication, but bypass it for the **downloads** themselves. |
+| `--proxy-download` | Use `--proxy` for the manifest, licence, and authentication, and a different proxy for the **downloads**. Takes the same forms as `--proxy`. |
 
 ```shell title="Explicit proxy URI"
 unshackle dl --proxy http://user:pass@1.2.3.4:8080 EXAMPLE 81234567
@@ -63,6 +64,21 @@ unshackle dl --proxy gb --no-proxy-download EXAMPLE 10a1234
     region as the manifest. On those services, bypassing the proxy for downloads will
     cause segment fetches to fail or return the wrong region. If downloads break with
     `--no-proxy-download`, remove it.
+
+### `--proxy-download`
+
+`--proxy-download` is the middle ground: the manifest, licence, and authentication go through
+`--proxy`, and the downloads go through a second proxy. Use it when one proxy passes the
+geo-check and another one is faster for bulk traffic. The value takes the same forms as
+`--proxy`, so a country code or `provider:region` resolves against the same providers.
+
+```shell title="Manifest and licence over NordVPN, downloads over Windscribe"
+unshackle dl --proxy nordvpn:us --proxy-download windscribevpn:us EXAMPLE 10a1234
+```
+
+`--no-proxy` and `--no-proxy-download` both override `--proxy-download`. The same
+region warning applies: if the service ties segment delivery to the manifest region, keep
+both proxies in that region.
 
 ## How proxy resolution works
 
@@ -122,6 +138,21 @@ where you came out:
 - **ExpressVPN** and **Proton VPN** print a location summary such as
   `(USA - New York, #3 of 5): .214`.
 - Other proxy providers log the resolved proxy URL.
+
+### Exit check
+
+Before the service sends a request, unshackle looks up the proxy exit IP through the
+proxy. The service stops with `Proxy check failed` in two cases:
+
+- No IP lookup gets through the proxy. The proxy is down, or it refused the connection.
+- The proxy exit IP is the same as your own IP, so traffic does not go through the proxy.
+
+unshackle tries each geolocation API in turn, and a 429 moves on to the next one. If at
+least one API answers through the proxy but none of them gives an IP, the proxy passes
+the check without the IP comparison. unshackle does not compare the exit country with the region you asked for,
+because geolocation data can be out of date.
+
+Over the REST API, the server returns this failure to the client as `INVALID_PROXY`.
 
 ## Basic (static proxies)
 

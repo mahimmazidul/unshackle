@@ -47,6 +47,7 @@ from unshackle.core.api.handlers import (
     server_account_regions,
     server_accounts_allowed,
     server_config_handler,
+    session_bad_key_handler,
     session_create_handler,
     session_delete_handler,
     session_info_handler,
@@ -200,6 +201,10 @@ async def services(request: web.Request) -> web.Response:
                         type: array
                         items:
                           type: string
+                      geoblock:
+                        type: array
+                        items:
+                          type: string
                       title_regex:
                         oneOf:
                           - type: string
@@ -252,6 +257,7 @@ async def services(request: web.Request) -> web.Response:
                 "tag": tag,
                 "aliases": [],
                 "geofence": [],
+                "geoblock": [],
                 "title_regex": None,
                 "url": None,
                 "help": None,
@@ -269,6 +275,7 @@ async def services(request: web.Request) -> web.Response:
 
                 if hasattr(service_module, "GEOFENCE"):
                     service_data["geofence"] = list(service_module.GEOFENCE)
+                service_data["geoblock"] = list(getattr(service_module, "GEOBLOCK", ()) or ())
 
                 if hasattr(service_module, "TITLE_RE"):
                     title_re = service_module.TITLE_RE
@@ -668,14 +675,14 @@ async def download(request: web.Request) -> web.Response:
                   - type: array
                     items:
                       type: string
-                description: Video codec(s) to download (e.g., "H265" or ["H264", "H265"]) - accepts H264, H265, AVC, HEVC, VP8, VP9, AV1, VC1 (default - None)
+                description: Video codec(s) to download (e.g., "HEVC" or ["AVC", "HEVC"]) - accepts AVC, H.264, H264, HEVC, H.265, H265, VC1, VC-1, VP8, VP9, AV1 (default - None)
               acodec:
                 oneOf:
                   - type: string
                   - type: array
                     items:
                       type: string
-                description: Audio codec(s) to download (e.g., "AAC" or ["AAC", "EC3"]) - accepts AAC, AC3, EC3, AC4, OPUS, FLAC, ALAC, DTS, DTSX, DTS-X, OGG (default - None)
+                description: Audio codec(s) to download (e.g., "AAC" or ["AAC", "EC3"]) - accepts AAC, AC3, DD, EC3, DD+, EAC3, DDP, AC4, AC-4, OPUS, OGG, VORB, VORBIS, DTS, DTSX, DTS-X, ALAC, FLAC (default - None)
               vbitrate:
                 type: integer
                 description: Video bitrate in kbps (default - None)
@@ -749,7 +756,7 @@ async def download(request: web.Request) -> web.Response:
                 description: Use exact language matching (no variants) (default - false)
               sub_format:
                 type: string
-                description: Output subtitle format such as SRT or VTT (default - None)
+                description: Output subtitle format such as SRT or VTT, or "original" to keep the source format (default - None)
               video_only:
                 type: boolean
                 description: Only download video tracks (default - false)
@@ -809,6 +816,9 @@ async def download(request: web.Request) -> web.Response:
               no_proxy_download:
                 type: boolean
                 description: Bypass proxy for all downloads. Manifest, license, and auth still use proxy (default - false)
+              proxy_download:
+                type: string
+                description: Proxy for the downloads only, in the same form as proxy. Manifest, license, and auth use proxy (default - None)
               tag:
                 type: string
                 description: Set the group tag (default - None)
@@ -1819,7 +1829,12 @@ async def session_license(request: web.Request) -> web.Response:
                 description: DRM type (default widevine)
     responses:
       '200':
-        description: License response
+        description: >-
+          License response. In server_cdm mode `keys` maps KID to content key and `vault_keys`,
+          an array of KID hex strings that may be absent and may repeat a KID shared by several
+          tracks, lists the content keys a server vault supplied, which the client has to prove
+          before it trusts them. `clear_tracks`, absent when empty, lists the requested track ids
+          that carry no DRM and so have no keys.
       '404':
         description: Remote session or track not found
     """
@@ -1838,6 +1853,58 @@ async def session_license(request: web.Request) -> web.Response:
         return handle_api_exception(
             e, context={"operation": "session_license"}, debug_mode=request.app.get("debug_api", False)
         )
+
+
+@api_handler
+async def session_bad_key(request: web.Request) -> web.Response:
+    """
+    Flag a server-vault content key the client proved wrong.
+    ---
+    summary: Report a bad content key
+    description: >-
+      The client decrypted with a content key the server took from its vault and the output did
+      not decode. The server flags the pair in its local vaults and reports it to the vault that
+      served it, so the next licence for that KID reaches the CDM. The server accepts only a pair
+      it served to this remote session.
+    parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - kid
+              - key
+            properties:
+              kid:
+                type: string
+                description: KID as hex
+              key:
+                type: string
+                description: Content key as hex
+    responses:
+      '200':
+        description: The pair is flagged
+      '400':
+        description: The remote session was not served that pair
+      '404':
+        description: Remote session not found
+    """
+    session_id = request.match_info["session_id"]
+    try:
+        data = await request.json()
+    except Exception as e:
+        return build_error_response(
+            APIError(APIErrorCode.INVALID_INPUT, "Invalid JSON request body", details={"error": str(e)}),
+            request.app.get("debug_api", False),
+        )
+    return await session_bad_key_handler(data, session_id, request)
 
 
 @api_handler
@@ -2428,6 +2495,10 @@ async def dashboard_services(request: web.Request) -> web.Response:
                     type: array
                     items:
                       type: string
+                  geoblock:
+                    type: array
+                    items:
+                      type: string
       '401':
         description: Dashboard key missing or invalid
     """
@@ -2548,6 +2619,7 @@ ROUTES: list[tuple[str, str, Handler, bool]] = [
     ("POST", "/api/session/{session_id}/segments", session_segments, True),
     ("POST", "/api/session/{session_id}/segment_filter", session_segment_filter, True),
     ("POST", "/api/session/{session_id}/license", session_license, True),
+    ("POST", "/api/session/{session_id}/keys/bad", session_bad_key, True),
     ("GET", "/api/session/{session_id}/logs", session_logs, True),
     ("GET", "/api/session/{session_id}/prompt", session_prompt_get, True),
     ("POST", "/api/session/{session_id}/prompt", session_prompt_submit, True),

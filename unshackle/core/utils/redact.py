@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import re
 import sys
 from pathlib import Path
@@ -40,20 +39,16 @@ PROXY_USERINFO_RE = re.compile(r"(^|://)[^:/@]+(?::[^/@]*)?@")
 PROXY_HOST_RE = re.compile(r"(://(?:[^/@]*@)?)(\[[^\]]+\]|[^:/?#]+)")
 
 
-def mask_proxy(uri: str, mask_host: bool = False, allow_debug: bool = True) -> str:
+def mask_proxy(uri: str, mask_host: bool = False, allow_debug: bool = False) -> str:
     """Replace proxy userinfo with ``xxxxx:xxxxx@host`` for console display.
 
     ``mask_host`` also replaces the hostname and keeps the scheme and the port, for
     a user-supplied proxy whose hostname identifies the account on its own.
-    The full URI passes through while DEBUG logging is active (``-d``), so a debug
-    run keeps the complete proxy URI and a normal run never shows the credentials.
-    Pass ``allow_debug=False`` where the output can reach more than the operator's
-    own terminal, such as ``serve`` logs and the dashboard, so that debug mode does
-    not widen the exposure.
+    Credentials stay masked even with ``-d``: a debug run still writes the full URI
+    to the JSON debug log, and the console must not. ``allow_debug`` is accepted for
+    older call sites and ignored.
     """
     if not isinstance(uri, str) or not uri:
-        return uri
-    if allow_debug and logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
         return uri
     uri = PROXY_USERINFO_RE.sub(r"\1xxxxx:xxxxx@", uri)
     if mask_host:

@@ -47,6 +47,11 @@ def main(version: bool, debug: bool) -> None:
     if debug_logging_enabled:
         init_debug_logger(enabled=True)
 
+    # filelock/tldextract DEBUG (one line per lock) reprints the status spinner
+    # on a new row; keep them off even with -d. HTTP client chatter stays off
+    # unless debug_requests is set.
+    for noisy in ("filelock", "tldextract", "tldextract.cache"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     if debug and not config.debug_requests:
         for noisy in ("urllib3", "urllib3.connectionpool", "requests", "rnet", "httpx", "httpcore", "hpack", "h2"):
             logging.getLogger(noisy).setLevel(logging.WARNING)

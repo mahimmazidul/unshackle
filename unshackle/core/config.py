@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+import sys
 import warnings
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -70,6 +72,19 @@ def resolve_cdm_name(cdm: dict, service: str, override: Any = None) -> Any:
     return override or ci_get(cdm, service) or ci_get(cdm, "default")
 
 
+# Bare names (`downloads: downloads`) go under ~/unshackle. Code module dirs stay
+# relative to the installed package so `vaults: vaults` does not leave site-packages.
+_CODE_DIR_KEYS = frozenset({"commands", "vaults", "fonts"})
+
+
+def _resolve_user_path(path: Any, *, relative_to: Path) -> Path:
+    """Expand `~` and turn a relative name into relative_to / name."""
+    value = Path(str(path)).expanduser()
+    if value.is_absolute():
+        return value
+    return (relative_to / value).resolve()
+
+
 class Config:
     class _Directories:
         # Default directories. These are only fallbacks: any path a user sets in
@@ -127,15 +142,27 @@ class Config:
         self.subtitle: dict = kwargs.get("subtitle") or {}
 
         self.directories = self._Directories()
-        for name, path in (kwargs.get("directories") or {}).items():
+        raw_dirs = dict(kwargs.get("directories") or {})
+        if "home" in raw_dirs:
+            self.directories.home = _resolve_user_path(raw_dirs.pop("home"), relative_to=Path.home())
+        for name, path in raw_dirs.items():
             if name.lower() in ("app_dirs", "core_dir", "namespace_dir", "user_configs", "data"):
                 # these must not be modified by the user
                 continue
             if name == "services" and isinstance(path, list):
                 # repo specs (git URLs / owner-repo) stay raw strings; resolved lazily in services.py
-                setattr(self.directories, name, [p if is_repo_spec(p) else Path(p).expanduser() for p in path])
+                setattr(
+                    self.directories,
+                    name,
+                    [
+                        p if is_repo_spec(p) else _resolve_user_path(p, relative_to=self.directories.namespace_dir)
+                        for p in path
+                    ],
+                )
+            elif name.lower() in _CODE_DIR_KEYS:
+                setattr(self.directories, name, _resolve_user_path(path, relative_to=self.directories.namespace_dir))
             else:
-                setattr(self.directories, name, Path(path).expanduser())
+                setattr(self.directories, name, _resolve_user_path(path, relative_to=self.directories.home))
 
         downloader_cfg = kwargs.get("downloader")
         if downloader_cfg and downloader_cfg != "requests":
@@ -376,17 +403,69 @@ class Config:
         return cls(**restore_bool_languages(yaml.safe_load(path.read_text(encoding="utf8")) or {}))
 
 
-# noinspection PyProtectedMember
-POSSIBLE_CONFIG_PATHS = (
-    # The unshackle Namespace Folder (e.g., %appdata%/Python/Python311/site-packages/unshackle)
-    Config._Directories.namespace_dir / Config._Filenames.root_config,
-    # The Parent Folder to the unshackle Namespace Folder (e.g., %appdata%/Python/Python311/site-packages)
-    Config._Directories.namespace_dir.parent / Config._Filenames.root_config,
-    # One visible home directory (e.g., ~/unshackle/unshackle.yaml). Optional; not required to install.
-    Config._Directories.user_configs / Config._Filenames.root_config,
-    # Legacy hidden AppDirs location, kept so an existing ~/.config/unshackle/unshackle.yaml still loads.
-    Path(Config._Directories.app_dirs.user_config_dir) / Config._Filenames.root_config,
-)
+def _venv_root() -> Optional[Path]:
+    """Parent of the active virtualenv, if we are running inside one."""
+    prefix = Path(sys.prefix).resolve()
+    if (prefix / "pyvenv.cfg").is_file() or prefix.name in {".venv", "venv", "env"}:
+        return prefix.parent
+    return None
+
+
+def get_config_candidates() -> list[Path]:
+    """Locations checked for unshackle.yaml, first existing file wins.
+
+    Includes the clone next to a venv (e.g. ~/.local/unshackle/unshackle/unshackle.yaml
+    when the venv is ~/.local/unshackle/.venv) so a non-editable pip install still
+    sees the yaml you edited in the source tree.
+    """
+    name = Config._Filenames.root_config
+    found: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        try:
+            key = path.expanduser()
+        except OSError:
+            key = path
+        try:
+            identity = key.resolve()
+        except OSError:
+            identity = key
+        if identity in seen:
+            return
+        seen.add(identity)
+        found.append(key)
+
+    env_path = os.environ.get("UNSHACKLE_CONFIG")
+    if env_path:
+        add(Path(env_path))
+
+    cwd = Path.cwd()
+    add(cwd / name)
+    add(cwd / "unshackle" / name)
+    here = cwd
+    for _ in range(5):
+        if here.parent == here:
+            break
+        here = here.parent
+        add(here / name)
+        add(here / "unshackle" / name)
+
+    venv_root = _venv_root()
+    if venv_root is not None:
+        add(venv_root / name)
+        add(venv_root / "unshackle" / name)
+
+    # noinspection PyProtectedMember
+    add(Config._Directories.namespace_dir / name)
+    add(Config._Directories.namespace_dir.parent / name)
+    add(Config._Directories.user_configs / name)
+    add(Path(Config._Directories.app_dirs.user_config_dir) / name)
+    return found
+
+
+# Kept for env info / older imports. Prefer get_config_candidates() for discovery.
+POSSIBLE_CONFIG_PATHS = tuple(get_config_candidates())
 
 
 def get_config_path() -> Optional[Path]:
@@ -395,8 +474,8 @@ def get_config_path() -> Optional[Path]:
 
     Returns None if no config file could be found.
     """
-    for path in POSSIBLE_CONFIG_PATHS:
-        if path.exists():
+    for path in get_config_candidates():
+        if path.is_file():
             return path
     return None
 

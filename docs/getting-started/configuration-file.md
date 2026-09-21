@@ -13,16 +13,21 @@ If you have never created one, that is fine: unshackle runs entirely on built-in
 
 ## Where the config file lives
 
-When unshackle starts, it searches a fixed list of locations and uses the **first one that exists**. In order of priority:
+When unshackle starts, it searches a list of locations and uses the **first file that exists**. In order of priority:
 
 | # | Location | Typical path |
 |---|----------|--------------|
-| 1 | The unshackle package folder | `.../site-packages/unshackle/unshackle.yaml` |
-| 2 | The parent of the package folder | `.../site-packages/unshackle.yaml` |
-| 3 | One visible home folder | `~/unshackle/unshackle.yaml` |
-| 4 | Legacy OS user-config directory | `~/.config/unshackle/unshackle.yaml` |
+| 1 | `UNSHACKLE_CONFIG` environment variable | whatever you set |
+| 2 | Current directory | `./unshackle.yaml` and `./unshackle/unshackle.yaml` |
+| 3 | Parents of the current directory (up to 5) | `../unshackle.yaml`, `../unshackle/unshackle.yaml`, … |
+| 4 | Folder that contains the active venv | `~/.local/unshackle/unshackle.yaml` |
+| 5 | Clone next to that venv | `~/.local/unshackle/unshackle/unshackle.yaml` |
+| 6 | The unshackle package folder | `.../site-packages/unshackle/unshackle.yaml` |
+| 7 | The parent of the package folder | `.../site-packages/unshackle.yaml` |
+| 8 | One visible home folder | `~/unshackle/unshackle.yaml` |
+| 9 | Legacy OS user-config directory | `~/.config/unshackle/unshackle.yaml` |
 
-The third location is the recommended place: it is a normal, visible folder (not a hidden `.config` path), lives outside the package, and survives reinstalls. YAML is optional at install — unshackle uses `~/unshackle/downloads`, `~/unshackle/cache`, and the other defaults with no config file.
+Location 8 is the recommended place for a standalone config: it is a normal, visible folder (not a hidden `.config` path), lives outside the package, and survives reinstalls. If you keep the yaml inside the clone next to `.venv` (location 5), that file is found even when the venv is not an editable install. YAML is optional at install — unshackle uses `~/unshackle/downloads`, `~/unshackle/cache`, and the other defaults with no config file.
 
 !!! tip "Not sure which file is being used?"
     Operate `unshackle env info`. It prints the path unshackle loaded the config from, or tells you that it found none. It also prints every directory unshackle currently uses.
@@ -116,11 +121,11 @@ services:
 
 ## The directory layout
 
-The `directories` config key controls where unshackle reads and writes its various files. Each directory has a sensible default, and you can override most of them by giving a new path. A path can use `~` for your home directory.
+The `directories` config key controls where unshackle reads and writes its various files. Each directory has a sensible default, and you can override most of them by giving a new path. A path can use `~` for your home directory. A **bare name** (no `/` and no `~`) is resolved under `~/unshackle` for data dirs (`downloads: downloads` → `~/unshackle/downloads`) and under the installed package for `commands` / `vaults` / `fonts`.
 
 ```yaml title="unshackle.yaml"
 directories:
-  downloads: ~/unshackle/downloads
+  downloads: downloads          # → ~/unshackle/downloads
   temp: ~/unshackle/temp
   cache: ~/unshackle/cache
 ```
@@ -202,7 +207,7 @@ $ unshackle cfg cdm.default --unset
 $ unshackle cfg --list
 ```
 
-When it writes, `unshackle cfg` targets the config file that unshackle loaded. If none exists yet, it makes `unshackle.yaml` inside the `unshackle` package folder (location 1 above), not your OS user-config directory. To keep the config outside the package, make the file at the user-config path yourself first, then `unshackle cfg` writes to it.
+When it writes, `unshackle cfg` targets the config file that unshackle loaded. If none exists yet, it creates `~/unshackle/unshackle.yaml`.
 
 !!! warning "Editing with `cfg` strips comments"
     Because `unshackle cfg` rewrites the whole file when it saves, a write removes any comments in `unshackle.yaml`. If you keep important notes as comments, edit the file by hand instead, or keep those notes elsewhere.

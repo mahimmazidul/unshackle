@@ -6,15 +6,17 @@ move them, and unshackle silently ignores an override of one. Writability-friend
 hidden `.config` / `.cache` / `.local` paths — so the same install runs both rootless
 (seedbox) and as root. YAML is optional; these defaults apply with no config file.
 Only code locations (`commands`, `services`, `vaults`, `fonts`, `core_dir`,
-`namespace_dir`) stay package-relative. Every user-settable path goes through
-`Path(...).expanduser()`, so `~` works.
+`namespace_dir`) stay package-relative. Absolute paths and `~` are kept as written.
+A **bare name** (`downloads: downloads`) is resolved under `directories.home`
+(`~/unshackle` unless you override `home`). `commands`, `vaults`, and `fonts` resolve
+a bare name against the installed package so they do not leave site-packages.
 
 ```yaml title="unshackle.yaml"
 directories:
-  downloads: ~/Media/unshackle
+  downloads: downloads                 # → ~/unshackle/downloads
   temp: /mnt/fast-scratch/unshackle-temp
-  wvds: ~/.unshackle/WVDs
-  prds: ~/.unshackle/PRDs
+  wvds: ~/unshackle/WVDs
+  prds: ~/unshackle/PRDs
 ```
 
 | Key | Type | Default | Overridable | Purpose |
@@ -29,10 +31,11 @@ directories:
 | `prds` | path | `~/unshackle/PRDs` | Yes | PlayReady device files (`.prd`). |
 | `dcsl` | path | `~/unshackle/DCSL` | Yes | DCSL data. |
 | `watchers` | path | `~/unshackle/watchers` | Yes | Watcher state, journal, and lock files. |
-| `commands` | path | `unshackle/commands` | Yes | CLI command modules. |
+| `home` | path | `~/unshackle` | Yes | Base folder for bare data-dir names. |
+| `commands` | path | `unshackle/commands` | Yes | CLI command modules (bare names stay package-relative). |
 | `services` | list \| path | `[unshackle/services]` | Yes | Service search paths and/or remote repo specs (see below). |
-| `vaults` | path | `unshackle/vaults` | Yes | Vault backend modules. |
-| `fonts` | path | `unshackle/fonts` | Yes | Bundled fonts. |
+| `vaults` | path | `unshackle/vaults` | Yes | Vault backend modules (bare names stay package-relative). |
+| `fonts` | path | `unshackle/fonts` | Yes | Bundled fonts (bare names stay package-relative). |
 | `user_configs` | path | `~/unshackle` | No protected | Where `unshackle.yaml` lives. |
 | `data` | path | `~/unshackle` | No protected | Base for the data subdirectories above. |
 | `core_dir` | path | `unshackle/core` | No protected | Package core. |

@@ -117,17 +117,20 @@ All of these directories are created automatically at startup.
 
 ## 4. Overriding defaults in `unshackle.yaml`
 
-Create `~/unshackle/unshackle.yaml` only if you want to override a default. Your values are used
-**exactly as written** (and never overridden by the fallback logic):
+Create `~/unshackle/unshackle.yaml` only if you want to override a default. A yaml
+inside the clone next to the venv (`~/.local/unshackle/unshackle/unshackle.yaml` when
+the venv is `~/.local/unshackle/.venv`) is also found. Bare names like
+`downloads: downloads` resolve to `~/unshackle/downloads`. Absolute paths and `~`
+are used as written:
 
 ```yaml
 directories:
-  downloads: ~/unshackle/downloads      # e.g. point at your seedbox download dir
+  downloads: downloads                  # → ~/unshackle/downloads
   temp: ~/unshackle/temp                # a big/fast mount is ideal for muxing
-  cache: ~/unshackle/cache
-  logs: ~/unshackle/logs
-  wvds: ~/unshackle/WVDs
-  prds: ~/unshackle/PRDs
+  cache: cache
+  logs: logs
+  wvds: WVDs
+  prds: PRDs
 
 # Optional disk-quota guard: cap the temp dir (bytes). 0 = unlimited (default).
 temp_max_bytes: 10737418240            # 10 GiB, oldest files pruned first

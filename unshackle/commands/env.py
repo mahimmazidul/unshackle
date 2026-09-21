@@ -10,7 +10,7 @@ from rich.padding import Padding
 from rich.tree import Tree
 
 from unshackle.core import binaries
-from unshackle.core.config import POSSIBLE_CONFIG_PATHS, config, config_path
+from unshackle.core.config import config, config_path, get_config_candidates
 from unshackle.core.console import console, listing_table, print_wide
 from unshackle.core.constants import context_settings
 from unshackle.core.services import Services
@@ -356,7 +356,7 @@ def info() -> None:
         tree = Tree(
             "[text]No config file found, you can use any of the following locations:[/]", guide_style="bright_black"
         )
-        for i, path in enumerate(POSSIBLE_CONFIG_PATHS, start=1):
+        for i, path in enumerate(get_config_candidates(), start=1):
             tree.add(f"[repr.number]{i}.[/] [text2]{path.resolve()}[/]")
         console.print(Padding(tree, (0, 5)))
 

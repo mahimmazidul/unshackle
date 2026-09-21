@@ -25,19 +25,21 @@
 #   user_configs, data, core_dir, namespace_dir, app_dirs.
 # ------------------------------------------------------------------------------
 # directories:
-#   downloads: ~/unshackle/downloads        # finished files
-#   cache: ~/unshackle/cache                # title cache + update-check store
-#   temp: ~/unshackle/temp                  # scratch space during download/decrypt/mux
-#   cookies: ~/unshackle/cookies            # per-service cookie files
-#   logs: ~/unshackle/logs                  # log files
-#   exports: ~/unshackle/exports            # export JSONs
-#   wvds: ~/unshackle/WVDs                  # Widevine devices (.wvd)
-#   prds: ~/unshackle/PRDs                  # PlayReady devices (.prd)
-#   dcsl: ~/unshackle/DCSL                  # DCSL data
-#   watchers: ~/unshackle/watchers          # watcher state/journal files
-#   commands: unshackle/commands            # CLI command modules
-#   vaults: unshackle/vaults                # vault backend modules
-#   fonts: unshackle/fonts                  # bundled fonts
+#   # Bare names (no / or ~) go under ~/unshackle. So `downloads: downloads`
+#   # is ~/unshackle/downloads. Absolute paths and ~ are kept as written.
+#   downloads: downloads                    # finished files
+#   cache: cache                            # title cache + update-check store
+#   temp: temp                              # scratch space during download/decrypt/mux
+#   cookies: cookies                        # per-service cookie files
+#   logs: logs                              # log files
+#   exports: exports                        # export JSONs
+#   wvds: WVDs                              # Widevine devices (.wvd)
+#   prds: PRDs                              # PlayReady devices (.prd)
+#   dcsl: DCSL                              # DCSL data
+#   watchers: watchers                      # watcher state/journal files
+#   commands: commands                      # CLI command modules (package-relative)
+#   vaults: vaults                          # vault backend modules (package-relative)
+#   fonts: fonts                            # bundled fonts (package-relative)
 #
 #   # `services` is special: a LIST of local dirs and/or git repo specs.
 #   # First source to define a tag wins; list local dirs last as fallback.

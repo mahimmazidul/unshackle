@@ -30,14 +30,21 @@ def test_dot_relative_paths_resolve_under_home(tmp_path: Path) -> None:
             "home": str(tmp_path),
             "downloads": "./downloads",
             "cache": "./cache",
-            "vaults": "./vaults",
-            "fonts": "./fonts",
         }
     )
     assert cfg.directories.downloads == tmp_path / "downloads"
     assert cfg.directories.cache == tmp_path / "cache"
-    assert cfg.directories.vaults == tmp_path / "vaults"
-    assert cfg.directories.fonts == tmp_path / "fonts"
+
+
+def test_relative_code_dirs_stay_in_the_package(tmp_path: Path) -> None:
+    cfg = Config(directories={"home": str(tmp_path), "vaults": "./vaults", "fonts": "./fonts"})
+    assert cfg.directories.vaults == cfg.directories.namespace_dir / "vaults"
+    assert cfg.directories.fonts == cfg.directories.namespace_dir / "fonts"
+
+
+def test_sqlite_vault_path_joins_home(tmp_path: Path) -> None:
+    cfg = Config(directories={"home": str(tmp_path)}, key_vaults=[{"type": "SQLite", "name": "Local", "path": "./key_store.db"}])
+    assert cfg.key_vaults[0]["path"] == str(tmp_path / "key_store.db")
 
 
 def test_tilde_and_absolute_directory_paths_are_kept(tmp_path: Path) -> None:

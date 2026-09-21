@@ -88,6 +88,9 @@ _DATA_DIR_KEYS = (
     "dcsl",
     "watchers",
 )
+# Python modules, not data. Relative names stay in the installed package so
+# `vaults: ./vaults` does not point at an empty clone/vaults folder.
+_CODE_DIR_KEYS = frozenset({"commands", "vaults", "fonts"})
 
 
 def _venv_prefix() -> Optional[Path]:
@@ -226,9 +229,15 @@ class Config:
                     self.directories,
                     name,
                     [
-                        p if is_repo_spec(p) else _resolve_user_path(p, relative_to=self.directories.home)
+                        p if is_repo_spec(p) else _resolve_user_path(p, relative_to=self.directories.namespace_dir)
                         for p in path
                     ],
+                )
+            elif name.lower() in _CODE_DIR_KEYS:
+                setattr(
+                    self.directories,
+                    name,
+                    _resolve_user_path(path, relative_to=self.directories.namespace_dir),
                 )
             else:
                 setattr(self.directories, name, _resolve_user_path(path, relative_to=self.directories.home))
@@ -248,6 +257,9 @@ class Config:
         self.audio: dict = kwargs.get("audio") or {}
         self.headers: dict = kwargs.get("headers") or {}
         self.key_vaults: list[dict[str, Any]] = kwargs.get("key_vaults", [])
+        for vault in self.key_vaults:
+            if isinstance(vault, dict) and vault.get("path"):
+                vault["path"] = str(_resolve_user_path(vault["path"], relative_to=self.directories.home))
         self.vault_timeout: float = kwargs.get("vault_timeout", 10.0)
         self.muxing: dict = kwargs.get("muxing") or {}
         self.proxy_providers: dict = kwargs.get("proxy_providers") or {}

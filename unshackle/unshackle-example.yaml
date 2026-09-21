@@ -38,9 +38,10 @@
 #   prds: ./PRDs                            # PlayReady devices (.prd)
 #   dcsl: ./DCSL                            # DCSL data
 #   watchers: ./watchers                    # watcher state/journal files
-#   # commands / vaults / fonts stay in the package unless you set them:
-#   vaults: ./vaults
-#   fonts: ./fonts
+#   # Do NOT set vaults/fonts/commands unless you ship extra Python modules.
+#   # `vaults: ./vaults` is the SQLite.py folder, not key_store.db. Leave them
+#   # unset so they stay in the installed package. The database path is
+#   # key_vaults[].path (e.g. ./key_store.db → <clone>/key_store.db).
 #
 #   # `services` is special: a LIST of local dirs and/or git repo specs.
 #   # First source to define a tag wins; list local dirs last as fallback.

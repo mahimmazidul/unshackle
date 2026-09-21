@@ -3,6 +3,7 @@ import logging
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from functools import partial
+from pathlib import Path
 from typing import Any, Iterator, Optional, Union
 from uuid import UUID
 
@@ -12,11 +13,38 @@ from unshackle.core.vault import Vault
 
 log = logging.getLogger(__name__)
 
-VAULTS = sorted(
-    (path for path in config.directories.vaults.glob("*.py") if path.stem.lower() != "__init__"), key=lambda x: x.stem
-)
+def _vault_files() -> list[Path]:
+    """Python files that implement vault backends.
 
+    `directories.vaults` is the module folder (SQLite.py, HTTP.py, …), not the
+    sqlite database. If that folder is empty — e.g. yaml `vaults: ./vaults`
+    pointed at the clone — fall back to the bundled package vaults.
+    """
+    dirs = [config.directories.vaults, config.directories.namespace_dir / "vaults"]
+    seen: set[Path] = set()
+    files: list[Path] = []
+    for folder in dirs:
+        try:
+            identity = folder.resolve()
+        except OSError:
+            identity = folder
+        if identity in seen:
+            continue
+        seen.add(identity)
+        if not folder.is_dir():
+            continue
+        found = sorted(
+            (path for path in folder.glob("*.py") if path.stem.lower() != "__init__"),
+            key=lambda x: x.stem,
+        )
+        if found:
+            return found
+    return files
+
+
+VAULTS = _vault_files()
 MODULES = {path.stem: getattr(import_module_by_path(path), path.stem) for path in VAULTS}
+MODULES.update({name.lower(): module for name, module in list(MODULES.items())})
 
 
 class Vaults:

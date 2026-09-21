@@ -149,7 +149,8 @@ config overrides, and seedbox notes (disk quota, `/tmp`, NFS locks, process limi
    ```
 
 See the [documentation](https://docs.unshackle.dev) for the full CLI reference,
-configuration guide, and REST API spec.
+configuration guide, and REST API spec. For the maintained availability watcher, see
+[WATCHER_README.md](WATCHER_README.md) and [watchers.example.yaml](watchers.example.yaml).
 
 ## Project layout
 

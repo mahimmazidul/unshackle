@@ -132,6 +132,8 @@ include = [
     "unshackle",
     "CHANGELOG.md",
     "README.md",
+    "WATCHER_README.md",
+    "watchers.example.yaml",
     "LICENSE",
 ]
 

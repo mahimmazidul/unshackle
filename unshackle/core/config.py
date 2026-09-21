@@ -48,6 +48,7 @@ class Config:
         wvds = data / "WVDs"
         prds = data / "PRDs"
         dcsl = data / "DCSL"
+        watchers = data / "watchers"
 
     class _Filenames:
         # default filenames, do not modify here, set via config
@@ -55,6 +56,7 @@ class Config:
         debug_log = "unshackle_debug_{service}_{time}.jsonl"  # Directories.logs
         config = "config.yaml"  # Directories.services / tag
         root_config = "unshackle.yaml"  # Directories.user_configs
+        watchers = "watchers.yaml"  # Directories.user_configs
         chapters = "Chapters_{title}_{random}.txt"  # Directories.temp
         subtitle = "Subtitle_{id}_{language}.srt"  # Directories.temp
 
@@ -143,6 +145,10 @@ class Config:
         self.redact_paths: bool = kwargs.get("redact_paths", True)
         self.continue_downloads: bool = kwargs.get("continue_downloads", False)
         self.post_scripts: list = kwargs.get("post_scripts") or []
+        # Watcher targets may live in this file (watchers:) or in a dedicated YAML
+        # whose path is watch.config / filenames.watchers.
+        self.watch: dict = kwargs.get("watch") or {}
+        self.watchers = kwargs.get("watchers")
 
         self.language_tags: dict = kwargs.get("language_tags") or {}
         self.tag_rules: list = kwargs.get("tag_rules") or []

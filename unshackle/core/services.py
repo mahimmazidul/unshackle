@@ -141,10 +141,46 @@ def register_service_binaries(modules: dict[str, object]) -> None:
                 log.warning(f"Failed to register custom binaries for service {tag}: {e}")
 
 
-MODULES, LOAD_ERRORS = load_services(SERVICES)
-register_service_binaries(MODULES)
+# Service modules are loaded on demand. The normal service-facing paths call
+# ensure_all_loaded() before presenting a full service inventory; the watcher only
+# imports the one configured service it needs for a metadata poll.
+MODULES: dict[str, object] = {}
+LOAD_ERRORS: list[str] = []
+ALIASES: dict[str, tuple[str, ...]] = {}
+ALL_SERVICES_LOADED = False
 
-ALIASES = {tag: getattr(module, "ALIASES", ()) for tag, module in MODULES.items()}
+
+def load_one(tag: str) -> object:
+    """Load one discovered service without importing unrelated service modules."""
+    if tag in MODULES:
+        return MODULES[tag]
+    path = next((path for path in SERVICES if path.parent.stem == tag), None)
+    if path is None:
+        raise KeyError(f"There is no Service added by the Tag '{tag}'")
+    try:
+        module = load_service(path)
+    except Exception as exc:
+        error = str(exc)
+        if error not in LOAD_ERRORS:
+            LOAD_ERRORS.append(error)
+        raise RuntimeError(error) from exc
+    MODULES[tag] = module
+    ALIASES[tag] = getattr(module, "ALIASES", ())
+    register_service_binaries({tag: module})
+    return module
+
+
+def ensure_all_loaded() -> None:
+    """Load every service for commands/API paths that need a complete inventory."""
+    global ALL_SERVICES_LOADED
+    if ALL_SERVICES_LOADED:
+        return
+    modules, errors = load_services(SERVICES)
+    MODULES.update(modules)
+    LOAD_ERRORS.extend(error for error in errors if error not in LOAD_ERRORS)
+    ALIASES.update({tag: getattr(module, "ALIASES", ()) for tag, module in modules.items()})
+    register_service_binaries(modules)
+    ALL_SERVICES_LOADED = True
 
 PENDING: set[str] = set()
 PENDING_SINCE: dict[str, float] = {}
@@ -322,6 +358,7 @@ def check_load_errors() -> None:
             "Service repo has local changes - refusing to refresh so your edits are not lost.\n"
             "Commit and push them to the upstream repo (or revert them), then retry:\n" + joined
         )
+    ensure_all_loaded()
     global SUMMARY_LOGGED
     if not SUMMARY_LOGGED:
         SUMMARY_LOGGED = True
@@ -572,16 +609,25 @@ class Services(click.Group):
             if any(value_lower == alias.lower() for alias in ALIASES.get(tag, ())):
                 return tag
 
+        # Aliases live in service modules. Only the uncommon alias path needs the
+        # complete inventory; an exact tag remains a single-module lazy import.
+        if not ALL_SERVICES_LOADED:
+            ensure_all_loaded()
+            for tag in tags:
+                if any(value_lower == alias.lower() for alias in ALIASES.get(tag, ())):
+                    return tag
         return value
 
     @staticmethod
     def load(tag: str) -> Service:
-        """Load a Service module by Service tag."""
+        """Load a Service module by Service tag, importing only that tag when possible."""
         module = MODULES.get(tag)
         if module:
             return module
-
-        raise KeyError(f"There is no Service added by the Tag '{tag}'")
+        try:
+            return load_one(tag)
+        except KeyError:
+            raise KeyError(f"There is no Service added by the Tag '{tag}'") from None
 
     @staticmethod
     def get_vault_tag(name: str) -> str:

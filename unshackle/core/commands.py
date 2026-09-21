@@ -49,11 +49,15 @@ def load_commands(paths: list[Path]) -> tuple[dict[str, object], list[str]]:
     return modules, errors
 
 
-MODULES, LOAD_ERRORS = load_commands(COMMANDS)
+# Commands are imported only when Click resolves the requested subcommand. This
+# keeps metadata-only commands such as `watch` from importing the normal downloader,
+# DRM, vault, muxing, and media-processing stack during CLI startup.
+MODULES: dict[str, object] = {}
+LOAD_ERRORS: list[str] = []
 
 
 def check_load_errors() -> None:
-    """Raise a single clean error if any command failed to load."""
+    """Raise a clean error for a command that failed its lazy import."""
     if LOAD_ERRORS:
         joined = "\n".join(f"  - {err}" for err in LOAD_ERRORS)
         raise click.ClickException(f"Failed to load {len(LOAD_ERRORS)} command(s):\n{joined}")
@@ -64,15 +68,22 @@ class Commands(click.Group):
 
     def list_commands(self, ctx: click.Context) -> list[str]:
         """Returns a list of command names from the command filenames."""
-        check_load_errors()
         return [x.stem.replace("_", "-") for x in COMMANDS]
 
     def get_command(self, ctx: click.Context, name: str) -> Optional[click.Command]:
-        """Load the command code and return the main click command function."""
-        check_load_errors()
-        module = MODULES.get(name) or MODULES.get(name.replace("-", "_"))
-        if not module:
-            raise click.ClickException(f"Unable to find command by the name '{name}'")
+        """Load only the requested command and return its Click command."""
+        key = name.replace("-", "_")
+        module = MODULES.get(key)
+        if module is None:
+            path = next((path for path in COMMANDS if path.stem == key), None)
+            if path is None:
+                raise click.ClickException(f"Unable to find command by the name '{name}'")
+            try:
+                module = MODULES[key] = load_command(path)
+            except Exception as exc:
+                LOAD_ERRORS.append(str(exc))
+                check_load_errors()
+                raise click.ClickException(f"Unable to load command '{name}'") from exc
 
         cmd = module.cli if hasattr(module, "cli") else module
         cmd.name = name

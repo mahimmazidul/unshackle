@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from langcodes import Language
 from pymediainfo import MediaInfo
@@ -13,7 +13,8 @@ from unshackle.core.constants import (
     SPACED_AUDIO_CODECS,
     VIDEO_CODEC_MAP,
 )
-from unshackle.core.tracks import Tracks
+if TYPE_CHECKING:
+    from unshackle.core.tracks import Tracks
 
 
 class Title:
@@ -54,8 +55,20 @@ class Title:
         self.data = data
         self.anime: Optional[bool] = None
         self.daily: Optional[bool] = None
+        self._tracks: Optional[Tracks] = None
 
-        self.tracks = Tracks()
+    @property
+    def tracks(self) -> Tracks:
+        """Create the track collection only when a download/track consumer accesses it."""
+        if self._tracks is None:
+            from unshackle.core.tracks import Tracks
+
+            self._tracks = Tracks()
+        return self._tracks
+
+    @tracks.setter
+    def tracks(self, value: Tracks) -> None:
+        self._tracks = value
 
     def __eq__(self, other: Title) -> bool:
         return self.id == other.id

@@ -89,6 +89,7 @@ The top-level keys group loosely into these areas:
 | Behaviour & logging | `update_checks`, `redact_paths`, `debug`, `unicode_filenames` |
 | Post-scripts | `post_scripts` |
 | Paths | `directories`, `filenames` |
+| Watcher | `watch`, `watchers` |
 
 For the full list with types and defaults, see the [Configuration Reference](../reference/configuration/index.md).
 
@@ -154,6 +155,7 @@ The directories unshackle uses:
 | `wvds` | Widevine devices (`.wvd` files) | Yes |
 | `prds` | PlayReady devices (`.prd` files) | Yes |
 | `dcsl` | DCSL data | Yes |
+| `watchers` | Watcher state, journal, and lock files | Yes |
 | `services` | Search paths for service code (see below) | Yes |
 | `commands` | CLI command modules | Yes |
 | `vaults` | Vault modules | Yes |

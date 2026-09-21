@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import requests
 
-from unshackle.core.providers._base import ExternalIds, MetadataProvider, MetadataResult, fuzzy_match, log
+from unshackle.core.providers._base import ExternalIds, MetadataProvider, MetadataResult, fuzzy_match, log, metadata_proxy
 from unshackle.core.providers.anilist import AniListProvider, parse_anilist_ref
 from unshackle.core.providers.imdb import IMDBProvider
 from unshackle.core.providers.omdb import OMDBProvider
@@ -595,6 +595,7 @@ __all__ = [
     "ExternalIds",
     "MetadataProvider",
     "MetadataResult",
+    "metadata_proxy",
     "enrich_ids",
     "fetch_external_ids",
     "fuzzy_match",

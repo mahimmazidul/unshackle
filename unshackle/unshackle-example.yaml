@@ -33,6 +33,7 @@
 #   wvds: ~/.local/share/unshackle/WVDs     # Widevine devices (.wvd)
 #   prds: ~/.local/share/unshackle/PRDs     # PlayReady devices (.prd)
 #   dcsl: ~/.local/share/unshackle/DCSL     # DCSL data
+#   watchers: ~/.local/share/unshackle/watchers  # watcher state/journal files
 #   commands: unshackle/commands            # CLI command modules
 #   vaults: unshackle/vaults                # vault backend modules
 #   fonts: unshackle/fonts                  # bundled fonts
@@ -558,9 +559,52 @@ output_template:
 
 
 # ------------------------------------------------------------------------------
+# WATCHER — availability polling. See WATCHER_README.md.
+# Watcher location, state directory, and (optionally) the watcher list itself
+# come from this file. `unshackle watch` with no --config uses, in order:
+#   1. watch.config (a dedicated YAML path)
+#   2. an inline `watchers:` list here
+#   3. ~/.config/unshackle/<filenames.watchers>
+# Download output_dir defaults to directories.downloads when a watcher omits it.
+# ------------------------------------------------------------------------------
+# watch:
+#   config: ~/.config/unshackle/watchers.yaml
+#   notifications:
+#     telegram:
+#       enabled: false
+#       bot_token_env: UNSHACKLE_TELEGRAM_BOT_TOKEN
+#       chat_id: ""
+#     discord:
+#       enabled: false
+#       webhook_url_env: UNSHACKLE_DISCORD_WEBHOOK_URL
+#     error_cooldown: 900
+#
+# watchers:
+#   - id: my-series
+#     service: example
+#     title_ref: "https://service.example/shows/my-series"
+#     profile: default
+#     mode: sequential
+#     proxy:
+#       service: direct
+#       metadata: direct
+#       download: inherit
+#     schedule:
+#       timezone: Asia/Dhaka
+#       poll_interval: 300
+#     availability:
+#       no_cache: true
+#       stability_delay: 900
+#     download:
+#       # output_dir defaults to directories.downloads when omitted
+#       quality: [1080]
+#
+#
+# ------------------------------------------------------------------------------
 # DEPRECATED / REMOVED — do not use.
 #   curl_impersonate  -> deprecated alias of `network` (warning emitted)
 #   downloader        -> deprecated; ignored (unified requests downloader)
 #   scene_naming      -> REMOVED; setting it exits with an error
 #   imdb_api_enabled  -> REMOVED; ignored (use the keyless `imdb` provider)
 # ------------------------------------------------------------------------------
+-------------

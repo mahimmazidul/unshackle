@@ -3,9 +3,11 @@ from __future__ import annotations
 import logging
 import re
 from abc import ABCMeta, abstractmethod
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from typing import Optional, Union
+from typing import Iterator, Optional, Union
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -13,6 +15,23 @@ from requests.adapters import HTTPAdapter, Retry
 log = logging.getLogger("METADATA")
 
 HEADERS = {"User-Agent": "unshackle-tags/1.0"}
+_PROXY_UNSET = object()
+_METADATA_PROXY: ContextVar[object] = ContextVar("unshackle_metadata_proxy", default=_PROXY_UNSET)
+
+
+@contextmanager
+def metadata_proxy(proxy: Optional[str]) -> Iterator[None]:
+    """Apply a proxy to metadata-provider sessions created in this context.
+
+    Service sessions and metadata-provider sessions are intentionally separate.  The
+    watcher uses this small context hook when a metadata API needs a different proxy
+    from the streaming service; ordinary downloads remain unchanged.
+    """
+    token = _METADATA_PROXY.set(proxy)
+    try:
+        yield
+    finally:
+        _METADATA_PROXY.reset(token)
 
 STRIP_RE = re.compile(r"[^a-z0-9]+", re.I)
 YEAR_RE = re.compile(r"\s*\(?[12][0-9]{3}\)?$")
@@ -67,6 +86,14 @@ class MetadataProvider(metaclass=ABCMeta):
             adapter = HTTPAdapter(max_retries=retry)
             self._session.mount("https://", adapter)
             self._session.mount("http://", adapter)
+        proxy = _METADATA_PROXY.get()
+        if proxy is not _PROXY_UNSET:
+            # Provider objects are normally short-lived, but updating an already
+            # created session keeps proxy roles correct when a caller reuses one.
+            if proxy:
+                self._session.proxies.update({"all": proxy})
+            else:
+                self._session.proxies.pop("all", None)
         return self._session
 
     @abstractmethod

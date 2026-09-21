@@ -1,0 +1,73 @@
+# Copy this file to ~/.config/unshackle/watchers.yaml, or point watch.config at
+# it from unshackle.yaml. Watcher location, state directory, and download output
+# default come from unshackle.yaml when this file omits them.
+# This file intentionally contains no service passwords, cookie values, API tokens,
+# Telegram bot tokens, or Discord webhook URLs.
+
+notifications:
+  telegram:
+    enabled: false
+    bot_token_env: UNSHACKLE_TELEGRAM_BOT_TOKEN
+    chat_id: ""
+  discord:
+    enabled: false
+    webhook_url_env: UNSHACKLE_DISCORD_WEBHOOK_URL
+  error_cooldown: 900
+
+watchers:
+  - id: my-series
+    service: example
+    # Keep this opaque and exact. It may be a complete service URL; do not replace it
+    # with a guessed native numeric ID.
+    title_ref: "https://service.example/shows/my-series"
+    profile: default
+    mode: sequential                 # sequential, latest, or explicit
+    # wanted: ["S02E01", "S02E03-S02E05"]  # enables explicit selector mode
+
+    # Values here are passed to the service constructor, not reimplemented by watcher.
+    # Use the parameters documented by `unshackle example --help` for your service.
+    service_params: {}
+
+    proxy:
+      service: direct                 # service authentication and fresh catalog calls
+      metadata: direct                # IMDb/SIMKL/TMDB/TVDB/AniList lookups
+      download: inherit               # inherit service; may also be a URI or provider name
+
+    schedule:
+      timezone: Asia/Dhaka
+      poll_interval: 300
+      # Remove weekday/release_time for ordinary interval polling.
+      # weekday: thursday
+      # release_time: "20:00"
+      # preflight_minutes: 5
+      # burst_poll_seconds: 3
+      # burst_window_minutes: 30
+      # checks_after_release: [0, 5, 15, 30]
+
+    availability:
+      no_cache: true
+      stability_delay: 900             # seconds; use 0 for low-latency release mode
+      retry_delays: [30, 60, 180, 300]
+
+    download:
+      # output_dir defaults to directories.downloads in unshackle.yaml
+      quality: [1080]
+      vcodec: []
+      range: [sdr]
+      # Other normal `dl` parameters can be placed here, for example:
+      # lang: [orig]
+      # s_lang: [all]
+      # no_mux: false
+
+  - id: one-movie
+    service: example
+    title_ref: "https://service.example/movies/one-movie"
+    mode: sequential
+    proxy:
+      service: direct
+      metadata: direct
+      download: inherit
+    availability:
+      no_cache: true
+      stability_delay: 0
+    download: {}

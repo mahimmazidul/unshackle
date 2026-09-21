@@ -29,10 +29,12 @@ def initialize_proxy_providers(raise_errors: bool = False, quiet: bool = False) 
         from unshackle.core.config import config as main_config
         from unshackle.core.proxies.basic import Basic
         from unshackle.core.proxies.expressvpn import ExpressVPN
+        from unshackle.core.proxies.gluetun import Gluetun
         from unshackle.core.proxies.hola import Hola
         from unshackle.core.proxies.nordvpn import NordVPN
         from unshackle.core.proxies.proton import ProtonVPN
         from unshackle.core.proxies.surfsharkvpn import SurfsharkVPN
+        from unshackle.core.proxies.windscribevpn import WindscribeVPN
 
         proxy_config = getattr(main_config, "proxy_providers", {})
 
@@ -49,6 +51,10 @@ def initialize_proxy_providers(raise_errors: bool = False, quiet: bool = False) 
             proxy_providers.append(proton)
         if proxy_config.get("surfsharkvpn"):
             proxy_providers.append(SurfsharkVPN(**proxy_config["surfsharkvpn"]))
+        if proxy_config.get("windscribevpn"):
+            proxy_providers.append(WindscribeVPN(**proxy_config["windscribevpn"]))
+        if proxy_config.get("gluetun"):
+            proxy_providers.append(Gluetun(**proxy_config["gluetun"]))
         if hasattr(binaries, "HolaProxy") and binaries.HolaProxy:
             proxy_providers.append(Hola())
 

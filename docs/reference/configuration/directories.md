@@ -28,6 +28,7 @@ directories:
 | `wvds` | path | `<data>/WVDs` | Yes | Widevine device files (`.wvd`). |
 | `prds` | path | `<data>/PRDs` | Yes | PlayReady device files (`.prd`). |
 | `dcsl` | path | `<data>/DCSL` | Yes | DCSL data. |
+| `watchers` | path | `<data>/watchers` | Yes | Watcher state, journal, and lock files. |
 | `commands` | path | `unshackle/commands` | Yes | CLI command modules. |
 | `services` | list \| path | `[unshackle/services]` | Yes | Service search paths and/or remote repo specs (see below). |
 | `vaults` | path | `unshackle/vaults` | Yes | Vault backend modules. |
@@ -92,6 +93,39 @@ directories:
     `_repos` clones. They are re-cloned on next use. On **read-only installs** you must
     point `services` at a writable path, or cloning will fail.
 
+## Watcher { #watcher }
+
+`unshackle watch` reads its location from `unshackle.yaml`. You do not have to pass
+`--config` unless you want a one-off file.
+
+Resolution order when `--config` is omitted:
+
+1. `watch.config` — path of a dedicated watcher YAML.
+2. An inline `watchers:` list (or `watch.watchers`) in `unshackle.yaml`.
+3. `~/.config/unshackle/<filenames.watchers>` (`watchers.yaml` by default).
+
+Watcher state (JSON, journal, lock files) is stored under `directories.watchers`.
+A watcher that omits `download.output_dir` uses `directories.downloads`.
+
+```yaml title="unshackle.yaml"
+directories:
+  downloads: ~/unshackle/downloads
+  watchers: ~/.local/share/unshackle/watchers
+
+watch:
+  config: ~/.config/unshackle/watchers.yaml
+  notifications:
+    error_cooldown: 900
+
+watchers:
+  - id: my-show
+    service: EXAMPLE
+    title_ref: "https://service.example/shows/my-show"
+    mode: sequential
+```
+
+See [WATCHER_README.md](../../../WATCHER_README.md) for modes, schedules, and recovery.
+
 ## Temp quota { #temp-quota }
 
 Set the optional top-level `temp_max_bytes` key to cap the temporary-work directory. When
@@ -115,5 +149,6 @@ each value verbatim (no path processing). It fills in braced fields like `{time}
 | `debug_log` | str | `"unshackle_debug_{service}_{time}.jsonl"` | Structured debug log, under `directories.logs`. |
 | `config` | str | `"config.yaml"` | Per-service config file, under that service's directory. |
 | `root_config` | str | `"unshackle.yaml"` | The main config filename itself. |
+| `watchers` | str | `"watchers.yaml"` | Dedicated watcher YAML under `directories.user_configs`, unless `watch.config` is set. |
 | `chapters` | str | `"Chapters_{title}_{random}.txt"` | Under `directories.temp`. |
 | `subtitle` | str | `"Subtitle_{id}_{language}.srt"` | Under `directories.temp`. |

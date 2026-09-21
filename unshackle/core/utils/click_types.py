@@ -4,10 +4,6 @@ from typing import Any, Optional, Union
 
 import click
 from click.shell_completion import CompletionItem
-from pywidevine.cdm import Cdm as WidevineCdm
-
-from unshackle.core.tracks.audio import Audio
-
 
 class VideoCodecChoice(click.Choice):
     """
@@ -147,7 +143,7 @@ class SubtitleCodecChoice(click.Choice):
 
 
 class ContextData:
-    def __init__(self, config: dict, cdm: WidevineCdm, proxy_providers: list, profile: Optional[str] = None):
+    def __init__(self, config: dict, cdm: Any, proxy_providers: list, profile: Optional[str] = None):
         self.config = config
         self.cdm = cdm
         self.proxy_providers = proxy_providers
@@ -353,7 +349,7 @@ class AudioCodecList(click.ParamType):
 
     def __init__(self, codec_enum):
         self.codec_enum = codec_enum
-        self._name_to_codec: dict[str, Audio.Codec] = {}
+        self._name_to_codec: dict[str, Any] = {}
         for codec in codec_enum:
             self._name_to_codec[codec.name.lower()] = codec
             self._name_to_codec[codec.value.lower()] = codec
@@ -462,8 +458,32 @@ class SlowDelayRange(click.ParamType):
         return (low, high)
 
 
+class LazyAudioCodecList(AudioCodecList):
+    """Load track/DRM code only when a download command actually parses audio codecs."""
+
+    name = "audio_codec_list"
+
+    def __init__(self) -> None:
+        self._delegate: Optional[AudioCodecList] = None
+
+    def _loaded(self) -> AudioCodecList:
+        if self._delegate is None:
+            from unshackle.core.tracks.audio import Audio
+
+            self._delegate = AudioCodecList(Audio.Codec)
+        return self._delegate
+
+    def convert(
+        self, value: Any, param: Optional[click.Parameter] = None, ctx: Optional[click.Context] = None
+    ) -> list:
+        return self._loaded().convert(value, param, ctx)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._loaded(), name)
+
+
 SEASON_RANGE = SeasonRange()
 LANGUAGE_RANGE = LanguageRange()
 QUALITY_LIST = QualityList()
-AUDIO_CODEC_LIST = AudioCodecList(Audio.Codec)
+AUDIO_CODEC_LIST = LazyAudioCodecList()
 SLOW_DELAY_RANGE = SlowDelayRange()

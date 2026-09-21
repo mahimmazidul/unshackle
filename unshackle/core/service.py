@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Generator
@@ -7,10 +9,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
+    import m3u8
+
     from unshackle.core.api.input_bridge import InputBridge
+    from unshackle.core.constants import AnyTrack
+    from unshackle.core.drm import DRM_T
+    from unshackle.core.tracks import Chapters, Tracks
 
 import click
-import m3u8
 import requests
 from requests.adapters import HTTPAdapter, Retry
 from rich.padding import Padding
@@ -19,9 +25,7 @@ from rich.rule import Rule
 from unshackle.core.cacher import Cacher
 from unshackle.core.config import config
 from unshackle.core.console import console, prompt_user
-from unshackle.core.constants import AnyTrack
 from unshackle.core.credential import Credential
-from unshackle.core.drm import DRM_T
 from unshackle.core.proxies.basic import Basic
 from unshackle.core.search_result import SearchResult
 from unshackle.core.session import (
@@ -36,8 +40,6 @@ from unshackle.core.session import (
 )
 from unshackle.core.title_cacher import TitleCacher, get_account_hash, get_region_from_proxy
 from unshackle.core.titles import Title_T, Titles_T, remap_titles
-from unshackle.core.tracks import Chapters, Tracks
-from unshackle.core.tracks.video import Video
 from unshackle.core.utilities import declared_kwargs
 from unshackle.core.utils.ip_info import get_ip_info
 from unshackle.core.utils.redact import mask_proxy
@@ -108,6 +110,13 @@ def grow_session_pool(session: Any, size: int) -> None:
         adapter.proxy_manager.clear()
 
 
+def _default_video_ranges() -> list[Any]:
+    """Import video/DRM track code only for a normal download-side service context."""
+    from unshackle.core.tracks.video import Video
+
+    return [Video.Range.SDR]
+
+
 @dataclass
 class TrackRequest:
     """Holds what the user requested for video codec and range selection.
@@ -119,8 +128,8 @@ class TrackRequest:
         ranges: Requested ranges from CLI. Defaults to [SDR].
     """
 
-    codecs: list[Video.Codec] = field(default_factory=list)
-    ranges: list[Video.Range] = field(default_factory=lambda: [Video.Range.SDR])
+    codecs: list[Any] = field(default_factory=list)
+    ranges: list[Any] = field(default_factory=_default_video_ranges)
     best_available: bool = False
 
 
@@ -179,9 +188,10 @@ class Service(metaclass=ABCMeta):
         vcodec = ctx.parent.params.get("vcodec") if ctx.parent else None
         range_ = ctx.parent.params.get("range_") if ctx.parent else None
         best_available = ctx.parent.params.get("best_available", False) if ctx.parent else False
+        is_watcher = bool(ctx.parent and ctx.parent.params.get("watcher"))
         self.track_request = TrackRequest(
             codecs=list(vcodec) if vcodec else [],
-            ranges=list(range_) if range_ else [Video.Range.SDR],
+            ranges=list(range_) if range_ else (["SDR"] if is_watcher else _default_video_ranges()),
             best_available=bool(best_available),
         )
 
@@ -315,6 +325,9 @@ class Service(metaclass=ABCMeta):
             title: The title to process.
             fetch_fn: A callable that fetches tracks for a specific codec/range.
         """
+        from unshackle.core.tracks import Tracks
+        from unshackle.core.tracks.video import Video
+
         all_tracks = Tracks()
         first = True
 
@@ -677,7 +690,7 @@ class Service(metaclass=ABCMeta):
             track: The downloaded Track object.
         """
 
-    def on_track_decrypted(self, track: AnyTrack, drm: DRM_T, segment: Optional[m3u8.Segment] = None) -> None:
+    def on_track_decrypted(self, track: AnyTrack, drm: "DRM_T", segment: Optional[m3u8.Segment] = None) -> None:
         """
         Called when a Track has finished decrypting.
 

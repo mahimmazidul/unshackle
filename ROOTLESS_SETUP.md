@@ -47,10 +47,17 @@ uv tool install git+https://github.com/mahimmazidul/unshackle.git
 or run straight from the clone:
 
 ```shell
-git clone https://github.com/mahimmazidul/unshackle.git
-cd unshackle
-uv run unshackle --help
+git clone https://github.com/mahimmazidul/unshackle.git ~/.local/unshackle
+cd ~/.local/unshackle
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .          # editable: git pull is enough after this
+unshackle --help
 ```
+
+If you already `pip install .` (no `-e`), `git pull` updates the clone but **not** the copy in
+`.venv/.../site-packages`. Reinstall with `pip install -e .` after every pull, or switch to
+`-e` once so pull is enough.
 
 > `uv tool install` puts `unshackle` in `~/.local/bin`. Add `~/.local/bin` to your `PATH`.
 

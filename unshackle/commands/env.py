@@ -350,6 +350,14 @@ def info() -> None:
     """Displays information about the current environment."""
     log = logging.getLogger("env")
 
+    ns = Path(config.directories.namespace_dir)
+    if "site-packages" in ns.parts or "dist-packages" in ns.parts:
+        log.warning(
+            "Running from site-packages (%s). git pull of the clone does not update this. "
+            "From the clone run: pip install -e .",
+            ns,
+        )
+
     if config_path:
         log.info(f"Config loaded from {config_path}")
     else:
@@ -376,14 +384,16 @@ def info() -> None:
         attr_value = getattr(config.directories, name)
 
         if isinstance(attr_value, list):
-            paths_str = "\n".join(str(p.resolve()) if isinstance(p, Path) else str(p) for p in attr_value)
+            paths_str = "\n".join(str(p) for p in attr_value)
             table.add_row(name.title(), paths_str)
         else:
-            path = attr_value.resolve()
-            for var, var_path in path_vars.items():
-                if path.is_relative_to(var_path):
-                    path = rf"%{var}%\{path.relative_to(var_path)}"
-                    break
+            path = Path(attr_value)
+            if sys.platform == "win32":
+                path = path.resolve()
+                for var, var_path in path_vars.items():
+                    if path.is_relative_to(var_path):
+                        path = rf"%{var}%\{path.relative_to(var_path)}"
+                        break
             table.add_row(name.title(), str(path))
 
     print_wide(table)

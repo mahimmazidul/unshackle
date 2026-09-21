@@ -122,11 +122,13 @@ config overrides, and seedbox notes (disk quota, `/tmp`, NFS locks, process limi
 
 ## Quick Start
 
-1. Create a config (copy the example and fill in a CDM + output templates):
+1. YAML is optional at install. Paths default to one visible folder:
+   `~/unshackle/downloads`, `~/unshackle/cache`, and so on. Copy a config
+   only when you want credentials, a CDM, or custom naming:
 
    ```shell
-   mkdir -p ~/.config/unshackle
-   cp unshackle/unshackle-example.yaml ~/.config/unshackle/unshackle.yaml
+   mkdir -p ~/unshackle
+   cp unshackle/unshackle-example.yaml ~/unshackle/unshackle.yaml
    ```
 
 2. Add a Widevine device and check the environment:

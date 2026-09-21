@@ -1,6 +1,6 @@
-# Copy this file to ~/.config/unshackle/watchers.yaml, or point watch.config at
-# it from unshackle.yaml. Watcher location, state directory, and download output
-# default come from unshackle.yaml when this file omits them.
+# Optional. Copy to ~/unshackle/watchers.yaml, or point watch.config at it from
+# unshackle.yaml. Watcher location, state directory, and download output
+# default come from unshackle.yaml (or ~/unshackle) when this file omits them.
 # This file intentionally contains no service passwords, cookie values, API tokens,
 # Telegram bot tokens, or Discord webhook URLs.
 

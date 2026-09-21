@@ -29,13 +29,13 @@ Watcher location comes from `unshackle.yaml`. Prefer setting it there rather tha
 passing `--config` on every run:
 
 ```yaml
-# ~/.config/unshackle/unshackle.yaml
+# ~/unshackle/unshackle.yaml
 directories:
   downloads: ~/unshackle/downloads
-  watchers: ~/.local/share/unshackle/watchers   # state/journal files
+  watchers: ~/unshackle/watchers   # state/journal files
 
 watch:
-  config: ~/.config/unshackle/watchers.yaml     # dedicated watcher YAML
+  config: ~/unshackle/watchers.yaml     # dedicated watcher YAML
 ```
 
 You can also put the `watchers:` list itself in `unshackle.yaml`. When
@@ -44,9 +44,9 @@ You can also put the `watchers:` list itself in `unshackle.yaml`. When
 Copy the safe example if you want a dedicated file:
 
 ```bash
-mkdir -p ~/.config/unshackle
-cp watchers.example.yaml ~/.config/unshackle/watchers.yaml
-$EDITOR ~/.config/unshackle/watchers.yaml
+mkdir -p ~/unshackle
+cp watchers.example.yaml ~/unshackle/watchers.yaml
+$EDITOR ~/unshackle/watchers.yaml
 ```
 
 Run one check immediately before starting a daemon:
@@ -250,7 +250,7 @@ example. The command is designed to run as a normal user; it stores watcher file
 Unshackle's configured user data directory, normally:
 
 ```text
-~/.local/share/unshackle/watchers/
+~/unshackle/watchers/
 ```
 
 For a persistent user-level systemd unit:

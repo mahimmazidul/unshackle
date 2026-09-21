@@ -47,8 +47,8 @@ uv tool install git+https://github.com/mahimmazidul/unshackle.git
 or run straight from the clone:
 
 ```shell
-git clone https://github.com/mahimmazidul/unshackle.git ~/unshackle
-cd ~/unshackle
+git clone https://github.com/mahimmazidul/unshackle.git
+cd unshackle
 uv run unshackle --help
 ```
 
@@ -62,7 +62,7 @@ The only long-running service is `unshackle serve` (REST API + Widevine/PlayRead
 Two launcher scripts are included (they use `nohup` + a PID file — no systemd):
 
 ```shell
-# default: 127.0.0.1:8786, logs to ~/.local/state/unshackle/serve.log
+# default: 127.0.0.1:8786, logs to ~/unshackle/logs/serve.log
 ./start.sh
 
 # bind a public port for remote clients (pick a HIGH port; <1024 needs root)
@@ -73,7 +73,7 @@ UNSHACKLE_SERVE_ARGS="--api-only --no-playready" ./start.sh
 
 ./stop.sh          # stop
 ./start.sh restart # restart
-tail -f ~/.local/state/unshackle/serve.log   # logs
+tail -f ~/unshackle/logs/serve.log   # logs
 ```
 
 On hosts that provide `tmux`/`screen`/`pm2`, those also work:
@@ -91,23 +91,25 @@ pm2 start "unshackle serve -h 0.0.0.0 -p 9000" --name unshackle
 
 ## 3. Where everything lives now (defaults)
 
-When a path is **not** set in `unshackle.yaml`, these XDG-style defaults are used:
+YAML is **not** required to install. When a path is **not** set in `unshackle.yaml`,
+everything lives in **one visible folder** (`~/unshackle`) — no hidden `.config` /
+`.cache` / `.local` paths:
 
 | Purpose | Default location |
 |---|---|
-| Config (`unshackle.yaml`) | `~/.config/unshackle/unshackle.yaml` |
-| Data base (cookies, WVDs, PRDs, …) | `~/.local/share/unshackle/` |
-| Logs | `~/.local/share/unshackle/logs/` |
-| Cookies | `~/.local/share/unshackle/cookies/` |
-| Widevine devices (`.wvd`) | `~/.local/share/unshackle/WVDs/` |
-| PlayReady devices (`.prd`) | `~/.local/share/unshackle/PRDs/` |
-| Exports | `~/.local/share/unshackle/exports/` |
-| Cache & title cache | `~/.cache/unshackle/` |
-| Temp scratch (download/decrypt/mux) | `~/.cache/unshackle/temp/` |
-| tempfile redirect (`mkstemp`, etc.) | `~/.cache/unshackle/tmp/` |
+| Config (`unshackle.yaml`, optional) | `~/unshackle/unshackle.yaml` |
 | Downloads (finished files) | `~/unshackle/downloads/` |
-| Service-repo clones (git) | `~/.cache/unshackle/services/_repos/` |
-| `serve` PID + log (start.sh) | `~/.local/state/unshackle/` |
+| Cache & title cache | `~/unshackle/cache/` |
+| Temp scratch (download/decrypt/mux) | `~/unshackle/temp/` |
+| tempfile redirect (`mkstemp`, etc.) | `~/unshackle/cache/tmp/` |
+| Cookies | `~/unshackle/cookies/` |
+| Logs | `~/unshackle/logs/` |
+| Widevine devices (`.wvd`) | `~/unshackle/WVDs/` |
+| PlayReady devices (`.prd`) | `~/unshackle/PRDs/` |
+| Exports | `~/unshackle/exports/` |
+| Watcher state | `~/unshackle/watchers/` |
+| Service-repo clones (git) | `~/unshackle/cache/services/_repos/` |
+| `serve` PID + log (start.sh) | `~/unshackle/logs/` |
 
 All of these directories are created automatically at startup.
 
@@ -115,17 +117,17 @@ All of these directories are created automatically at startup.
 
 ## 4. Overriding defaults in `unshackle.yaml`
 
-Create `~/.config/unshackle/unshackle.yaml` and set any of these. Your values are used
+Create `~/unshackle/unshackle.yaml` only if you want to override a default. Your values are used
 **exactly as written** (and never overridden by the fallback logic):
 
 ```yaml
 directories:
-  downloads: ~/media/unshackle          # e.g. point at your seedbox download dir
-  temp: ~/media/unshackle-tmp           # a big/fast mount is ideal for muxing
-  cache: ~/.cache/unshackle
-  logs: ~/.local/share/unshackle/logs
-  wvds: ~/.local/share/unshackle/WVDs
-  prds: ~/.local/share/unshackle/PRDs
+  downloads: ~/unshackle/downloads      # e.g. point at your seedbox download dir
+  temp: ~/unshackle/temp                # a big/fast mount is ideal for muxing
+  cache: ~/unshackle/cache
+  logs: ~/unshackle/logs
+  wvds: ~/unshackle/WVDs
+  prds: ~/unshackle/PRDs
 
 # Optional disk-quota guard: cap the temp dir (bytes). 0 = unlimited (default).
 temp_max_bytes: 10737418240            # 10 GiB, oldest files pruned first
@@ -150,7 +152,7 @@ unshackle env check       # checks the external tools
   `temp_max_bytes` so a stuck job can't silently fill your quota. `unshackle env clear
   temp` / `env clear cache` free space manually; stale task dirs are swept automatically.
 - **Shared `/tmp`:** seedboxes may purge or size-limit `/tmp`. At startup unshackle
-  redirects Python's `tempfile` module to `~/.cache/unshackle/tmp`, so no temp work lands
+  redirects Python's `tempfile` module to `~/unshackle/cache/tmp`, so no temp work lands
   in `/tmp`.
 - **Shared / NFS filesystems:** the per-task lock now falls back from `flock()` to an
   atomic PID-file lock when the filesystem rejects `flock()`, so downloads don't crash on
@@ -175,11 +177,11 @@ unshackle env check       # checks the external tools
 
 ## 6. What was changed (summary)
 
-- Writable-path **defaults** moved from the installed package/clone into XDG user dirs
-  (config-first: YAML always wins).
+- Writable-path **defaults** moved from the installed package/clone into one visible
+  folder (`~/unshackle`). YAML is optional; when present it always wins.
 - `rootless_check()` added — runs at startup, detects uid/writable paths/tools and
   auto-adjusts (same code works root and rootless).
-- `tempfile` redirected to `~/.cache/unshackle/tmp`; NFS-safe lock fallback; optional
+- `tempfile` redirected to `~/unshackle/cache/tmp`; NFS-safe lock fallback; optional
   `temp_max_bytes` quota guard; service-repo clones moved to the user cache dir.
 - `sudo` removed from the one printed install hint; no systemd, no privileged ports,
   no iptables/ufw/firewalld, no `chown root:`.

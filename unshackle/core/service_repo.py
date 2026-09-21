@@ -66,7 +66,7 @@ def slug(url: str) -> str:
 
 def repos_base() -> Path:
     """Where clones live: <first configured local services dir>/_repos (else the default)."""
-    from unshackle.core.config import Config, config  # lazy: avoid config <-> service_repo import cycle
+    from unshackle.core.config import config  # lazy: avoid config <-> service_repo import cycle
 
     entries = config.directories.services
     if not isinstance(entries, list):
@@ -74,9 +74,9 @@ def repos_base() -> Path:
     for entry in entries:
         if not (isinstance(entry, str) and is_repo_spec(entry)):
             return Path(entry).expanduser() / "_repos"
-    # Fallback: no local services dir configured, so clones go to a user-writable
-    # cache dir (rootless-safe) instead of inside the installed package.
-    return Path(Config._Directories.app_dirs.user_cache_dir) / "services" / "_repos"
+    # Fallback: no local services dir configured, so clones go under the visible
+    # cache directory instead of inside the installed package.
+    return Path(config.directories.cache) / "services" / "_repos"
 
 
 def resolve_service_repo(spec: str, *, ttl: int = DEFAULT_TTL, force: bool = False) -> Optional[Path]:

@@ -44,6 +44,7 @@ _WRITABLE_DIRS = (
     "wvds",
     "prds",
     "dcsl",
+    "watchers",
 )
 
 

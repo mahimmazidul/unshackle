@@ -59,7 +59,7 @@ Declare vaults under the `key_vaults` list in your unshackle config file. Each e
 key_vaults:
   - type: SQLite
     name: local
-    path: ~/.local/share/unshackle/vaults/local.db
+    path: ~/unshackle/vaults/local.db
   - type: MySQL
     name: shared
     host: vault.example.com
@@ -95,7 +95,7 @@ A locally-accessed SQLite database file. This is the simplest and fastest option
 key_vaults:
   - type: SQLite
     name: local
-    path: ~/.local/share/unshackle/vaults/local.db
+    path: ~/unshackle/vaults/local.db
 ```
 
 | Field | Required | Description |

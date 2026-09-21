@@ -2,10 +2,10 @@
 
 The `directories` config key is a **dict** mapping directory names to filesystem paths.
 unshackle honours only the names listed below. A handful are **protected** and you cannot
-move them, and unshackle silently ignores an override of one. Writability-friendly defaults
-under the user's home (`~/.config/unshackle`, `~/.local/share/unshackle`, `~/.cache/unshackle`)
-are used for every key you leave unset, so the same install runs both rootless (seedbox)
-and as root; only code locations (`commands`, `services`, `vaults`, `fonts`, `core_dir`,
+move them, and unshackle silently ignores an override of one. Writability-friendly defaults all live in **one visible folder** (`~/unshackle`) — not
+hidden `.config` / `.cache` / `.local` paths — so the same install runs both rootless
+(seedbox) and as root. YAML is optional; these defaults apply with no config file.
+Only code locations (`commands`, `services`, `vaults`, `fonts`, `core_dir`,
 `namespace_dir`) stay package-relative. Every user-settable path goes through
 `Path(...).expanduser()`, so `~` works.
 
@@ -20,21 +20,21 @@ directories:
 | Key | Type | Default | Overridable | Purpose |
 |-----|------|---------|:-----------:|---------|
 | `downloads` | path | `~/unshackle/downloads` | Yes | Default output directory for finished files. |
-| `temp` | path | `~/.cache/unshackle/temp` | Yes | Temporary working files during download/decrypt/mux. |
-| `cache` | path | `~/.cache/unshackle` | Yes | Generic cache, title cache, and the update-check store. |
-| `cookies` | path | `<data>/cookies` | Yes | Per-service cookie files (and VPN cookie files). |
-| `logs` | path | `<data>/logs` | Yes | Log files. |
-| `exports` | path | `<data>/exports` | Yes | Export JSON files. |
-| `wvds` | path | `<data>/WVDs` | Yes | Widevine device files (`.wvd`). |
-| `prds` | path | `<data>/PRDs` | Yes | PlayReady device files (`.prd`). |
-| `dcsl` | path | `<data>/DCSL` | Yes | DCSL data. |
-| `watchers` | path | `<data>/watchers` | Yes | Watcher state, journal, and lock files. |
+| `temp` | path | `~/unshackle/temp` | Yes | Temporary working files during download/decrypt/mux. |
+| `cache` | path | `~/unshackle/cache` | Yes | Generic cache, title cache, and the update-check store. |
+| `cookies` | path | `~/unshackle/cookies` | Yes | Per-service cookie files (and VPN cookie files). |
+| `logs` | path | `~/unshackle/logs` | Yes | Log files. |
+| `exports` | path | `~/unshackle/exports` | Yes | Export JSON files. |
+| `wvds` | path | `~/unshackle/WVDs` | Yes | Widevine device files (`.wvd`). |
+| `prds` | path | `~/unshackle/PRDs` | Yes | PlayReady device files (`.prd`). |
+| `dcsl` | path | `~/unshackle/DCSL` | Yes | DCSL data. |
+| `watchers` | path | `~/unshackle/watchers` | Yes | Watcher state, journal, and lock files. |
 | `commands` | path | `unshackle/commands` | Yes | CLI command modules. |
 | `services` | list \| path | `[unshackle/services]` | Yes | Service search paths and/or remote repo specs (see below). |
 | `vaults` | path | `unshackle/vaults` | Yes | Vault backend modules. |
 | `fonts` | path | `unshackle/fonts` | Yes | Bundled fonts. |
-| `user_configs` | path | `~/.config/unshackle` | No protected | Where `unshackle.yaml` lives. |
-| `data` | path | `~/.local/share/unshackle` | No protected | Base for the data subdirectories above. |
+| `user_configs` | path | `~/unshackle` | No protected | Where `unshackle.yaml` lives. |
+| `data` | path | `~/unshackle` | No protected | Base for the data subdirectories above. |
 | `core_dir` | path | `unshackle/core` | No protected | Package core. |
 | `namespace_dir` | path | `unshackle/` | No protected | Package root. |
 | `app_dirs` | - | `AppDirs("unshackle", False)` | No protected | Internal AppDirs instance. |
@@ -102,7 +102,7 @@ Resolution order when `--config` is omitted:
 
 1. `watch.config` — path of a dedicated watcher YAML.
 2. An inline `watchers:` list (or `watch.watchers`) in `unshackle.yaml`.
-3. `~/.config/unshackle/<filenames.watchers>` (`watchers.yaml` by default).
+3. `~/unshackle/<filenames.watchers>` (`watchers.yaml` by default).
 
 Watcher state (JSON, journal, lock files) is stored under `directories.watchers`.
 A watcher that omits `download.output_dir` uses `directories.downloads`.
@@ -110,10 +110,10 @@ A watcher that omits `download.output_dir` uses `directories.downloads`.
 ```yaml title="unshackle.yaml"
 directories:
   downloads: ~/unshackle/downloads
-  watchers: ~/.local/share/unshackle/watchers
+  watchers: ~/unshackle/watchers
 
 watch:
-  config: ~/.config/unshackle/watchers.yaml
+  config: ~/unshackle/watchers.yaml
   notifications:
     error_cooldown: 900
 

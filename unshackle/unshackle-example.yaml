@@ -1,10 +1,11 @@
 # ==============================================================================
 #  unshackle — reference configuration (example)
 #
-#  Copy this file to `unshackle.yaml` and keep only what you need:
+#  This file is OPTIONAL. Install and `unshackle --help` work with no YAML.
+#  Copy it only when you want credentials, a CDM, or to change a default:
 #
-#      mkdir -p ~/.config/unshackle
-#      cp unshackle-example.yaml ~/.config/unshackle/unshackle.yaml
+#      mkdir -p ~/unshackle
+#      cp unshackle-example.yaml ~/unshackle/unshackle.yaml
 #
 #  Everything except `output_template` is COMMENTED OUT as a placeholder — copy
 #  the file, uncomment what you want, and fill in real values. unshackle runs
@@ -19,21 +20,21 @@
 
 # ------------------------------------------------------------------------------
 # DIRECTORIES — where everything is read and written.
-# Writable paths default to your home dir (rootless/seedbox safe) and are created
-# automatically. `~` is expanded. These five are PROTECTED and cannot be moved:
+# Defaults are one visible folder (~/unshackle). No YAML is needed for these.
+# `~` is expanded. These five are PROTECTED and cannot be moved:
 #   user_configs, data, core_dir, namespace_dir, app_dirs.
 # ------------------------------------------------------------------------------
 # directories:
-#   downloads: ~/unshackle/downloads        # finished files (default ~/unshackle/downloads)
-#   temp: ~/.cache/unshackle/temp           # scratch space during download/decrypt/mux
-#   cache: ~/.cache/unshackle               # title cache + update-check store
-#   cookies: ~/.local/share/unshackle/cookies   # per-service cookie files
-#   logs: ~/.local/share/unshackle/logs     # log files
-#   exports: ~/.local/share/unshackle/exports   # export JSONs
-#   wvds: ~/.local/share/unshackle/WVDs     # Widevine devices (.wvd)
-#   prds: ~/.local/share/unshackle/PRDs     # PlayReady devices (.prd)
-#   dcsl: ~/.local/share/unshackle/DCSL     # DCSL data
-#   watchers: ~/.local/share/unshackle/watchers  # watcher state/journal files
+#   downloads: ~/unshackle/downloads        # finished files
+#   cache: ~/unshackle/cache                # title cache + update-check store
+#   temp: ~/unshackle/temp                  # scratch space during download/decrypt/mux
+#   cookies: ~/unshackle/cookies            # per-service cookie files
+#   logs: ~/unshackle/logs                  # log files
+#   exports: ~/unshackle/exports            # export JSONs
+#   wvds: ~/unshackle/WVDs                  # Widevine devices (.wvd)
+#   prds: ~/unshackle/PRDs                  # PlayReady devices (.prd)
+#   dcsl: ~/unshackle/DCSL                  # DCSL data
+#   watchers: ~/unshackle/watchers          # watcher state/journal files
 #   commands: unshackle/commands            # CLI command modules
 #   vaults: unshackle/vaults                # vault backend modules
 #   fonts: unshackle/fonts                  # bundled fonts
@@ -358,7 +359,7 @@ output_template:
 # key_vaults:
 #   - type: SQLite
 #     name: Local
-#     path: ~/.local/share/unshackle/key_store.db
+#     path: ~/unshackle/key_store.db
 #     no_push: false              # true = read-only vault
 #   - type: MySQL
 #     name: Team
@@ -564,11 +565,11 @@ output_template:
 # come from this file. `unshackle watch` with no --config uses, in order:
 #   1. watch.config (a dedicated YAML path)
 #   2. an inline `watchers:` list here
-#   3. ~/.config/unshackle/<filenames.watchers>
+#   3. ~/unshackle/<filenames.watchers>
 # Download output_dir defaults to directories.downloads when a watcher omits it.
 # ------------------------------------------------------------------------------
 # watch:
-#   config: ~/.config/unshackle/watchers.yaml
+#   config: ~/unshackle/watchers.yaml
 #   notifications:
 #     telegram:
 #       enabled: false
@@ -607,4 +608,3 @@ output_template:
 #   scene_naming      -> REMOVED; setting it exits with an error
 #   imdb_api_enabled  -> REMOVED; ignored (use the keyless `imdb` provider)
 # ------------------------------------------------------------------------------
--------------

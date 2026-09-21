@@ -18,7 +18,7 @@ set -eu
 
 HOST="${UNSHACKLE_HOST:-127.0.0.1}"
 PORT="${UNSHACKLE_PORT:-8786}"
-LOG_DIR="${UNSHACKLE_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/unshackle}"
+LOG_DIR="${UNSHACKLE_LOG_DIR:-$HOME/unshackle/logs}"
 PID_FILE="$LOG_DIR/serve.pid"
 LOG_FILE="$LOG_DIR/serve.log"
 

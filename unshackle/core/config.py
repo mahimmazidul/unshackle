@@ -74,10 +74,10 @@ class Config:
     class _Directories:
         # Default directories. These are only fallbacks: any path a user sets in
         # unshackle.yaml overrides the matching entry (see Config.__init__).
-        # Writable runtime data now defaults to XDG user dirs, so a rootless/seedbox
-        # install never tries to write into the (possibly read-only) installed package.
-        # Code locations (commands/services/vaults/fonts/core_dir/namespace_dir) stay
-        # package-relative: they point at the code, not at writable state.
+        # All writable runtime data lives in one visible folder (~/unshackle), not
+        # in hidden XDG paths (~/.config, ~/.local, ~/.cache) that are hard to
+        # browse and move on seedboxes. YAML is optional — these defaults apply
+        # with no config file. Code locations stay package-relative.
         app_dirs = AppDirs("unshackle", False)
         core_dir = Path(__file__).resolve().parent
         namespace_dir = core_dir.parent
@@ -85,18 +85,19 @@ class Config:
         services = [namespace_dir / "services"]
         vaults = namespace_dir / "vaults"
         fonts = namespace_dir / "fonts"
-        user_configs = Path(app_dirs.user_config_dir)  # ~/.config/unshackle
-        data = Path(app_dirs.user_data_dir)  # ~/.local/share/unshackle
-        downloads = Path.home() / "unshackle" / "downloads"  # ~/unshackle/downloads
-        temp = Path(app_dirs.user_cache_dir) / "temp"  # ~/.cache/unshackle/temp
-        cache = Path(app_dirs.user_cache_dir)  # ~/.cache/unshackle
-        cookies = data / "cookies"
-        logs = data / "logs"
-        exports = data / "exports"
-        wvds = data / "WVDs"
-        prds = data / "PRDs"
-        dcsl = data / "DCSL"
-        watchers = data / "watchers"
+        home = Path.home() / "unshackle"  # one visible directory
+        user_configs = home
+        data = home
+        downloads = home / "downloads"
+        temp = home / "temp"
+        cache = home / "cache"
+        cookies = home / "cookies"
+        logs = home / "logs"
+        exports = home / "exports"
+        wvds = home / "WVDs"
+        prds = home / "PRDs"
+        dcsl = home / "DCSL"
+        watchers = home / "watchers"
 
     class _Filenames:
         # default filenames, do not modify here, set via config
@@ -381,7 +382,9 @@ POSSIBLE_CONFIG_PATHS = (
     Config._Directories.namespace_dir / Config._Filenames.root_config,
     # The Parent Folder to the unshackle Namespace Folder (e.g., %appdata%/Python/Python311/site-packages)
     Config._Directories.namespace_dir.parent / Config._Filenames.root_config,
-    # The AppDirs User Config Folder (e.g., ~/.config/unshackle on Linux, %LOCALAPPDATA%\unshackle on Windows)
+    # One visible home directory (e.g., ~/unshackle/unshackle.yaml). Optional; not required to install.
+    Config._Directories.user_configs / Config._Filenames.root_config,
+    # Legacy hidden AppDirs location, kept so an existing ~/.config/unshackle/unshackle.yaml still loads.
     Path(Config._Directories.app_dirs.user_config_dir) / Config._Filenames.root_config,
 )
 

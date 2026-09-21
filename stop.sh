@@ -6,7 +6,7 @@
 
 set -eu
 
-LOG_DIR="${UNSHACKLE_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/unshackle}"
+LOG_DIR="${UNSHACKLE_LOG_DIR:-$HOME/unshackle/logs}"
 PID_FILE="$LOG_DIR/serve.pid"
 
 if [ ! -f "$PID_FILE" ]; then

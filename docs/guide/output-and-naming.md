@@ -392,11 +392,11 @@ The `directories` config key relocates unshackle's working folders. You can move
 
 ```yaml title="unshackle.yaml"
 directories:
-  downloads: "~/Media/unshackle"
-  temp: "/mnt/fast/unshackle-temp"
-  cache: "~/.cache/unshackle"
-  cookies: "~/.config/unshackle/cookies"
-  logs: "~/.config/unshackle/logs"
+  downloads: "~/unshackle/downloads"
+  temp: "~/unshackle/temp"
+  cache: "~/unshackle/cache"
+  cookies: "~/unshackle/cookies"
+  logs: "~/unshackle/logs"
 ```
 
 | Name | Purpose |

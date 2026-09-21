@@ -35,12 +35,12 @@ user-settable keys):
 
 | Attribute | Before | After (fallback default) |
 |---|---|---|
-| `user_configs` | `<package>/` | `~/.config/unshackle` (AppDirs) |
-| `data` | `<package>/` | `~/.local/share/unshackle` (AppDirs) |
+| `user_configs` | `<package>/` | `~/unshackle` (visible; YAML optional) |
+| `data` | `<package>/` | `~/unshackle` |
 | `downloads` | `<clone>/downloads` | `~/unshackle/downloads` |
-| `temp` | `<clone>/temp` | `~/.cache/unshackle/temp` |
-| `cache` | `data/cache` | `~/.cache/unshackle` |
-| `cookies` `logs` `exports` `wvds` `prds` `dcsl` | `data/…` | `~/.local/share/unshackle/…` |
+| `temp` | `<clone>/temp` | `~/unshackle/temp` |
+| `cache` | `data/cache` | `~/unshackle/cache` |
+| `cookies` `logs` `exports` `wvds` `prds` `dcsl` `watchers` | `data/…` | `~/unshackle/…` |
 
 `commands`, `services`, `vaults`, `fonts`, `core_dir`, `namespace_dir` stay
 package-relative (they point at *code*, not writable state).
@@ -48,7 +48,7 @@ Also adds a new optional key `temp_max_bytes` (int, `0` = unlimited) for quota s
 
 ### 2. `unshackle/core/rootless.py` — **NEW** `rootless_check()`
 Runs at startup: detects uid/root, `mkdir`s the writable dirs, points Python's
-`tempfile` module at `~/.cache/unshackle/tmp` (so *all* `mkstemp`/`TemporaryDirectory`
+`tempfile` module at `~/unshackle/cache/tmp` (so *all* `mkstemp`/`TemporaryDirectory`
 work redirects off `/tmp`), reports available tools (`ffmpeg`, `mkvmerge`, `git`, …) and
 a low `RLIMIT_NPROC`. Never raises.
 

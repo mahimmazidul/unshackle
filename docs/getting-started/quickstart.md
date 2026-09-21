@@ -50,9 +50,8 @@ examines them, they are:
 
 1. `unshackle.yaml` inside the unshackle package folder.
 2. `unshackle.yaml` in that folder's parent.
-3. `unshackle.yaml` in your OS user-config directory
-   (`~/.config/unshackle/` on Linux, `%LOCALAPPDATA%\unshackle\` on Windows,
-   `~/Library/Application Support/unshackle/` on macOS).
+3. `~/unshackle/unshackle.yaml` (the recommended visible folder).
+4. Legacy `~/.config/unshackle/unshackle.yaml` if you still have one.
 
 The **first** file that exists wins. Make `unshackle.yaml` in one of those
 locations.
@@ -216,9 +215,8 @@ codec, bitrate, channel-layout, and track-type selection.
 
 ## 8. Where the output lands
 
-By default, unshackle writes finished files to the `downloads` directory.
-`unshackle env info` shows its exact path. The built-in default is a `downloads`
-folder one level above the installed `unshackle` package. Override it for one
+By default, unshackle writes finished files to `~/unshackle/downloads`.
+`unshackle env info` shows its exact path. Override it for one
 command with `-o`:
 
 ```shell

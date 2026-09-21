@@ -19,27 +19,10 @@ When unshackle starts, it searches a fixed list of locations and uses the **firs
 |---|----------|--------------|
 | 1 | The unshackle package folder | `.../site-packages/unshackle/unshackle.yaml` |
 | 2 | The parent of the package folder | `.../site-packages/unshackle.yaml` |
-| 3 | Your OS user-config directory | see the table below |
+| 3 | One visible home folder | `~/unshackle/unshackle.yaml` |
+| 4 | Legacy OS user-config directory | `~/.config/unshackle/unshackle.yaml` |
 
-The third location, your per-user config directory, is the recommended place for most installations, because it lives outside the package and survives reinstalls and upgrades. Its exact path depends on your operating system:
-
-=== "Linux"
-
-    ```text
-    ~/.config/unshackle/unshackle.yaml
-    ```
-
-=== "Windows"
-
-    ```text
-    %LOCALAPPDATA%\unshackle\unshackle.yaml
-    ```
-
-=== "macOS"
-
-    ```text
-    ~/Library/Application Support/unshackle/unshackle.yaml
-    ```
+The third location is the recommended place: it is a normal, visible folder (not a hidden `.config` path), lives outside the package, and survives reinstalls. YAML is optional at install — unshackle uses `~/unshackle/downloads`, `~/unshackle/cache`, and the other defaults with no config file.
 
 !!! tip "Not sure which file is being used?"
     Operate `unshackle env info`. It prints the path unshackle loaded the config from, or tells you that it found none. It also prints every directory unshackle currently uses.
@@ -137,9 +120,9 @@ The `directories` config key controls where unshackle reads and writes its vario
 
 ```yaml title="unshackle.yaml"
 directories:
-  downloads: ~/Videos/unshackle
-  temp: /mnt/fast/unshackle-temp
-  cache: ~/.cache/unshackle
+  downloads: ~/unshackle/downloads
+  temp: ~/unshackle/temp
+  cache: ~/unshackle/cache
 ```
 
 The directories unshackle uses:

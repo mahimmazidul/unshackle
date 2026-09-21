@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from unshackle.core.config import (
     Config,
+    _prefer_logical_home,
     _project_home,
     _resolve_user_path,
     get_config_candidates,
@@ -78,6 +80,35 @@ def test_default_data_dirs_follow_venv_parent(tmp_path: Path, monkeypatch) -> No
     assert cfg.directories.downloads == tmp_path / "downloads"
     assert cfg.directories.cache == tmp_path / "cache"
     assert cfg.directories.vaults == cfg.directories.namespace_dir / "vaults"
+
+
+def test_prefer_logical_home_uses_cwd_when_samefile(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "clone"
+    target.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(target)
+    monkeypatch.chdir(target)
+    assert _prefer_logical_home(alias) == Path.cwd()
+
+
+def test_prefer_logical_home_rewrites_homeNN_via_samefile(monkeypatch) -> None:
+    def fake_samefile(left, right) -> bool:
+        def norm(value) -> str:
+            return os.fspath(value).replace("/home28/alice", "/home/alice")
+
+        return norm(left) == norm(right)
+
+    monkeypatch.setattr(os.path, "samefile", fake_samefile)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path("/home28/alice")))
+    assert _prefer_logical_home(Path("/home28/alice/.local/unshackle")) == Path("/home/alice/.local/unshackle")
+    assert _prefer_logical_home(Path("/var/unshackle")) == Path("/var/unshackle")
+
+
+def test_clone_services_dir_is_prepended(tmp_path: Path) -> None:
+    (tmp_path / "services").mkdir()
+    cfg = Config(directories={"home": str(tmp_path)})
+    assert cfg.directories.services[0] == tmp_path / "services"
+    assert cfg.directories.namespace_dir / "services" in cfg.directories.services
 
 
 def test_config_candidates_include_venv_sibling(tmp_path: Path, monkeypatch) -> None:

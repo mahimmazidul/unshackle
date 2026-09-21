@@ -6,7 +6,6 @@ import sys
 from typing import Any, Optional
 
 import click
-import yaml
 from rich.padding import Padding
 from rich.rule import Rule
 from rich.tree import Tree
@@ -18,9 +17,9 @@ from unshackle.core.console import console
 from unshackle.core.constants import context_settings
 from unshackle.core.proxies import Basic, ExpressVPN, Gluetun, Hola, NordVPN, ProtonVPN, SurfsharkVPN, WindscribeVPN
 from unshackle.core.service import Service
-from unshackle.core.services import Services
+from unshackle.core.service_config import check_service_config_keys
+from unshackle.core.services import Services, load_service_config
 from unshackle.core.utils.click_types import ContextData
-from unshackle.core.utils.collections import merge_dict
 from unshackle.core.utils.redact import mask_proxy
 
 
@@ -53,13 +52,17 @@ def search(ctx: click.Context, no_proxy: bool, profile: Optional[str] = None, pr
         log.info(f"Using profile: '{profile}'")
 
     with console.status("Loading Service Config...", spinner="dots"):
-        service_config_path = Services.get_path(service) / config.filenames.config
-        if service_config_path.exists():
-            service_config = yaml.safe_load(service_config_path.read_text(encoding="utf8"))
-            log.info("Service Config loaded")
+        service_config, service_config_path = load_service_config(service)
+        if service_config_path:
+            keys = ", ".join(sorted(map(str, service_config))) or "(none)"
+            log.info(f"Service Config loaded from {service_config_path} ({keys})")
         else:
-            service_config = {}
-        merge_dict(config.services.get(service), service_config)
+            try:
+                expected = Services.get_path(service) / config.filenames.config
+            except KeyError:
+                expected = config.filenames.config
+            log.warning(f"No service config at {expected}")
+        check_service_config_keys(service, service_config, service_config_path)
 
     proxy_providers = []
     if no_proxy:

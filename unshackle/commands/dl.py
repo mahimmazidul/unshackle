@@ -27,7 +27,6 @@ from typing import Any, Callable, Collection, Optional, Sequence, TypedDict, Uni
 from uuid import UUID
 
 import click
-import yaml
 from click.core import ParameterSource
 from langcodes import Language, tag_is_valid
 from pymediainfo import MediaInfo
@@ -55,7 +54,8 @@ from unshackle.core.providers.tvdb import SEASON_TYPES, parse_int
 from unshackle.core.proxies import Basic, ExpressVPN, Gluetun, Hola, NordVPN, ProtonVPN, SurfsharkVPN, WindscribeVPN
 from unshackle.core.proxies.resolve import is_loopback, resolve_proxy
 from unshackle.core.service import Service, grow_session_pool
-from unshackle.core.services import Services
+from unshackle.core.service_config import check_service_config_keys
+from unshackle.core.services import Services, load_service_config
 from unshackle.core.temp import with_task_temp
 from unshackle.core.title_cacher import get_account_hash
 from unshackle.core.titles import Movie, Movies, Series, Song, Title_T
@@ -1027,7 +1027,7 @@ class dl:
 
         self.service = Services.get_tag(ctx.invoked_subcommand)
         self.vault_service = Services.get_vault_tag(self.service)
-        apply_service_dl_overrides(ctx, config.services.get(self.service, {}).get("dl", {}), self.log)
+        apply_service_dl_overrides(ctx, (ci_get(config.services, self.service) or {}).get("dl", {}), self.log)
 
         # Refresh locals Click bound before the overrides ran.
         no_proxy = ctx.params.get("no_proxy", no_proxy)
@@ -1185,29 +1185,35 @@ class dl:
         self.is_remote = bool(ctx.params.get("remote"))
 
         with console.status("Loading Service Config...", spinner="dots"):
-            self.service_config = {}
-            if not self.is_remote:
-                try:
-                    service_config_path = Services.get_path(self.service) / config.filenames.config
-                    if service_config_path.exists():
-                        self.service_config = yaml.safe_load(service_config_path.read_text(encoding="utf8"))
-                        self.log.info("Service Config loaded")
-                        # log key names only: the full config carries service certificates,
-                        # device fingerprints and endpoints that bloat the log and may be sensitive
-                        log_event(
-                            "load_service_config",
-                            level="DEBUG",
-                            service=self.service,
-                            context={
-                                "config_path": str(service_config_path),
-                                "config_keys": sorted(self.service_config or []),
-                            },
-                        )
-                except KeyError:
-                    pass
-            merge_dict(config.services.get(self.service), self.service_config)
+            service_config_path = None
+            if self.is_remote:
+                overlay = ci_get(config.services, self.service) or {}
+                self.service_config = dict(overlay) if isinstance(overlay, dict) else {}
+            else:
+                self.service_config, service_config_path = load_service_config(self.service)
+                if service_config_path:
+                    keys = ", ".join(sorted(map(str, self.service_config))) or "(none)"
+                    self.log.info(f"Service Config loaded from {service_config_path} ({keys})")
+                    # log key names only: the full config carries service certificates,
+                    # device fingerprints and endpoints that bloat the log and may be sensitive
+                    log_event(
+                        "load_service_config",
+                        level="DEBUG",
+                        service=self.service,
+                        context={
+                            "config_path": str(service_config_path),
+                            "config_keys": sorted(self.service_config or []),
+                        },
+                    )
+                else:
+                    try:
+                        expected = Services.get_path(self.service) / config.filenames.config
+                    except KeyError:
+                        expected = Path(config.filenames.config)
+                    self.log.warning(f"No service config at {expected}")
+            check_service_config_keys(self.service, self.service_config, service_config_path)
 
-        service_config = config.services.get(self.service, {})
+        service_config = ci_get(config.services, self.service) or {}
         if service_config:
             reserved_keys = {
                 "profiles",

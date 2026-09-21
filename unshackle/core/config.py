@@ -116,23 +116,38 @@ def _venv_root() -> Optional[Path]:
     return prefix.parent if prefix is not None else None
 
 
+def _same_path(left: Path, right: Path) -> bool:
+    """True when both paths exist and are the same file, including bind mounts.
+
+    Path.resolve() does not collapse a bind mount of /home/user onto /homeNN/user.
+    """
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return False
+
+
 def _prefer_logical_home(path: Path) -> Path:
     """Keep a user-facing path: cwd spelling, then /home/<user> over /homeNN/<user>."""
+    path = Path(path)
     try:
-        target = path.resolve()
         cwd = Path.cwd()
-        if cwd.resolve() == target:
+        if _same_path(cwd, path):
             return cwd
     except OSError:
+        pass
+
+    user = Path.home().name
+    short_home = Path("/home") / user
+    match = re.match(r"^(/home\d+)/([^/]+)(/.*)?$", path.as_posix())
+    if not match or match.group(2) != user:
         return path
-    try:
-        passwd_home = Path.home().resolve()
-        short = Path("/home") / Path.home().name
-        if short.resolve() != passwd_home:
-            return path
-        return short / target.relative_to(passwd_home)
-    except (OSError, ValueError):
-        return path
+    long_home = Path(match.group(1)) / user
+    rest = (match.group(3) or "").lstrip("/")
+    logical = short_home / rest if rest else short_home
+    if _same_path(short_home, long_home) or _same_path(logical, path):
+        return logical
+    return path
 
 
 def _project_home() -> Path:
@@ -241,6 +256,37 @@ class Config:
                 )
             else:
                 setattr(self.directories, name, _resolve_user_path(path, relative_to=self.directories.home))
+
+        for name in dir(self.directories):
+            if name.startswith("_") or name == "app_dirs":
+                continue
+            value = getattr(self.directories, name)
+            if isinstance(value, Path):
+                setattr(self.directories, name, _prefer_logical_home(value))
+            elif isinstance(value, list):
+                setattr(
+                    self.directories,
+                    name,
+                    [_prefer_logical_home(p) if isinstance(p, Path) else p for p in value],
+                )
+
+        clone_services = self.directories.home / "services"
+        current_services = self.directories.services
+        if not isinstance(current_services, list):
+            current_services = [current_services]
+        already = False
+        for entry in current_services:
+            if not isinstance(entry, Path):
+                continue
+            if entry == clone_services or _same_path(entry, clone_services):
+                already = True
+                break
+        try:
+            clone_exists = clone_services.is_dir()
+        except OSError:
+            clone_exists = False
+        if clone_exists and not already:
+            self.directories.services = [clone_services, *current_services]
 
         downloader_cfg = kwargs.get("downloader")
         if downloader_cfg and downloader_cfg != "requests":

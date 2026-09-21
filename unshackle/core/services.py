@@ -9,13 +9,14 @@ import threading
 import time
 from importlib.machinery import EXTENSION_SUFFIXES
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 import click
 
 from unshackle.core import binaries
 from unshackle.core.config import config
 from unshackle.core.service import Service
+from unshackle.core.service_config import merge_service_overlay, parse_service_config_file
 from unshackle.core.service_repo import DirtyServiceRepo, head, is_repo_spec, refresh_repo, resolve_service_repo
 from unshackle.core.utilities import import_module_by_path
 from unshackle.core.utils.redact import redact_path
@@ -644,4 +645,59 @@ class Services(click.Group):
         return getattr(service, "VAULT_TAG", None) or tag
 
 
-__all__ = ("Services",)
+def service_config_paths(tag: str) -> list[Path]:
+    """config.yaml (and .yml) next to the running service, following symlinks."""
+    raw = Services.get_path(tag)
+    names = [config.filenames.config]
+    suffix = Path(names[0]).suffix.lower()
+    stem = Path(names[0]).stem
+    if suffix == ".yaml":
+        names.append(f"{stem}.yml")
+    elif suffix == ".yml":
+        names.append(f"{stem}.yaml")
+    dirs: list[Path] = []
+    init_py = raw / "__init__.py"
+    try:
+        if init_py.exists():
+            dirs.append(init_py.resolve().parent)
+    except OSError:
+        pass
+    if raw not in dirs:
+        dirs.append(raw)
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for directory in dirs:
+        for name in names:
+            path = directory / name
+            try:
+                key = path.resolve()
+            except OSError:
+                key = path
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(path)
+    return out
+
+
+def load_service_config(tag: str) -> tuple[dict, Optional[Path]]:
+    """Load TAG/config.yaml next to the running service, unwrap ``TAG:``, merge user overlay.
+
+    Returns ``(mapping, path_or_none)``. ``path`` is the file that was read.
+    """
+    data: dict = {}
+    loaded_from: Optional[Path] = None
+    try:
+        candidates = service_config_paths(tag)
+    except KeyError:
+        candidates = []
+    for path in candidates:
+        if path.is_file():
+            data = parse_service_config_file(path, tag)
+            loaded_from = path
+            break
+    merge_service_overlay(data, tag)
+    return data, loaded_from
+
+
+__all__ = ("Services", "load_service_config")

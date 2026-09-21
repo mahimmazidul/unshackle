@@ -52,7 +52,7 @@ from unshackle.core.events import events
 from unshackle.core.providers.anilist import parse_anilist_ref
 from unshackle.core.providers.tvdb import SEASON_TYPES, parse_int
 from unshackle.core.proxies import Basic, ExpressVPN, Gluetun, Hola, NordVPN, ProtonVPN, SurfsharkVPN, WindscribeVPN
-from unshackle.core.proxies.resolve import is_loopback, resolve_proxy
+from unshackle.core.proxies.resolve import is_loopback, provider_block, provider_matches, resolve_proxy
 from unshackle.core.service import Service, grow_session_pool
 from unshackle.core.service_config import check_service_config_keys
 from unshackle.core.services import Services, load_service_config
@@ -1361,25 +1361,46 @@ class dl:
                 self.proxy_providers = list(proxy_providers)
             else:
                 with console.status("Loading Proxy Providers...", spinner="dots"):
-                    if config.proxy_providers.get("basic"):
-                        self.proxy_providers.append(Basic(**config.proxy_providers["basic"]))
+                    proxy_cfg = config.proxy_providers or {}
+
+                    def try_load(label: str, factory) -> None:
+                        try:
+                            self.proxy_providers.append(factory())
+                        except Exception as e:
+                            self.log.error(f"Failed to load {label}: {e}")
+
+                    basic = provider_block(proxy_cfg, "basic")
+                    if basic:
+                        try_load("Basic", lambda: Basic(**basic))
                     # ExpressVPN/ProtonVPN auto-load when their default cookie file exists (no yaml needed)
-                    expressvpn = ExpressVPN(**(config.proxy_providers.get("expressvpn") or {}))
-                    if config.proxy_providers.get("expressvpn") or expressvpn.cache_path.is_file():
-                        self.proxy_providers.append(expressvpn)
-                    if config.proxy_providers.get("nordvpn"):
-                        self.proxy_providers.append(NordVPN(**config.proxy_providers["nordvpn"]))
-                    proton = ProtonVPN(**(config.proxy_providers.get("protonvpn") or {}))
-                    if config.proxy_providers.get("protonvpn") or proton.cookie_path.is_file():
-                        self.proxy_providers.append(proton)
-                    if config.proxy_providers.get("surfsharkvpn"):
-                        self.proxy_providers.append(SurfsharkVPN(**config.proxy_providers["surfsharkvpn"]))
-                    if config.proxy_providers.get("windscribevpn"):
-                        self.proxy_providers.append(WindscribeVPN(**config.proxy_providers["windscribevpn"]))
-                    if config.proxy_providers.get("gluetun"):
-                        self.proxy_providers.append(Gluetun(**config.proxy_providers["gluetun"]))
+                    express_cfg = provider_block(proxy_cfg, "expressvpn", "express")
+                    try:
+                        expressvpn = ExpressVPN(**express_cfg)
+                        if express_cfg or expressvpn.cache_path.is_file():
+                            self.proxy_providers.append(expressvpn)
+                    except Exception as e:
+                        self.log.error(f"Failed to load ExpressVPN: {e}")
+                    nord = provider_block(proxy_cfg, "nordvpn", "nord")
+                    if nord:
+                        try_load("NordVPN", lambda: NordVPN(**nord))
+                    proton_cfg = provider_block(proxy_cfg, "protonvpn", "proton")
+                    try:
+                        proton = ProtonVPN(**proton_cfg)
+                        if proton_cfg or proton.cookie_path.is_file():
+                            self.proxy_providers.append(proton)
+                    except Exception as e:
+                        self.log.error(f"Failed to load ProtonVPN: {e}")
+                    surf = provider_block(proxy_cfg, "surfsharkvpn", "surfshark")
+                    if surf:
+                        try_load("SurfsharkVPN", lambda: SurfsharkVPN(**surf))
+                    wind = provider_block(proxy_cfg, "windscribevpn", "windscribe")
+                    if wind:
+                        try_load("WindscribeVPN", lambda: WindscribeVPN(**wind))
+                    glue = provider_block(proxy_cfg, "gluetun")
+                    if glue:
+                        try_load("Gluetun", lambda: Gluetun(**glue))
                     if binaries.HolaProxy:
-                        self.proxy_providers.append(Hola())
+                        try_load("Hola", Hola)
                     for proxy_provider in self.proxy_providers:
                         self.log.info(f"Loaded {proxy_provider.__class__.__name__}: {proxy_provider}")
 
@@ -1411,11 +1432,7 @@ class dl:
                     with console.status(status_msg, spinner="dots"):
                         if requested_provider:
                             proxy_provider = next(
-                                (
-                                    x
-                                    for x in self.proxy_providers
-                                    if x.__class__.__name__.lower() == requested_provider.lower()
-                                ),
+                                (x for x in self.proxy_providers if provider_matches(x, requested_provider)),
                                 None,
                             )
                             if not proxy_provider:

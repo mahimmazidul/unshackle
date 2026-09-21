@@ -588,26 +588,38 @@ them from the [Surfshark manual-setup page](https://my.surfshark.com/vpn/manual-
 
 ```yaml title="unshackle.yaml"
 proxy_providers:
-  surfsharkvpn:
+  surfsharkvpn:                # also accepted as `surfshark`
     username: YOUR_SERVICE_USERNAME
     password: YOUR_SERVICE_PASSWORD
-    server_map:                # optional
-      us: 1234
+    server_map:                # optional: pin a query to a cluster
+      us: us-dal
+      in: in-mum.prod.surfshark.com
 ```
 
-**Required keys:** `username`, `password`, validated with the same 48-character rule as
-NordVPN (combined username+password must be 48 alphanumeric characters, case-insensitive, no `@`).
-`server_map` optionally pins server IDs per region.
+**Required keys:** `username`, `password`. These are OpenVPN/manual-setup **service
+credentials**, not the email/password used to log in to the website. The username must
+not contain `@`. YAML values are coerced to strings, so a numeric-looking username is
+fine.
+
+`server_map` is optional and maps a query (`us`, `us:seattle`) to a cluster slug
+(`us-dal`) or a full `connectionName` (`us-dal.prod.surfshark.com`). Numeric IDs from
+older configs are ignored (Surfshark no longer numbers clusters that way).
+
+You can also write the yaml key as `surfshark`, and `--proxy surfshark:in` matches the
+same provider as `--proxy surfsharkvpn:in`. Extra keys in the yaml block (for example a
+leftover `enabled:`) are ignored so they do not fail load.
 
 **Query forms:**
 
 | Query | Meaning |
 |---|---|
-| `us` | A random US server. |
-| `us-bos` | A specific server. |
-| `us:seattle` | A random server in Seattle. |
+| `us` | A random US cluster (`connectionName` from the clusters API). |
+| `gb` / `uk` | A random UK cluster (API uses `GB`; hosts still look like `uk-lon`). |
+| `us-bos` | The Boston cluster, as a slug or full host. |
+| `us:seattle` | A random cluster whose city/location is Seattle. |
 
-The returned proxy is HTTPS on **port 443**.
+The returned proxy is HTTPS on **port 443**, hostname
+`{slug}.prod.surfshark.com`.
 
 ## Windscribe
 

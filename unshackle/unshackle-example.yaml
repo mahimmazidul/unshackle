@@ -341,9 +341,12 @@ output_template:
 #   nordvpn:
 #     username: <service username>
 #     password: <service password>
-#   surfsharkvpn:
+#   surfsharkvpn:                 # also accepted as `surfshark`
 #     username: <service username>
 #     password: <service password>
+#     server_map:                 # optional: pin a query to a cluster slug or host
+#       us: us-dal
+#       in: in-mum.prod.surfshark.com
 #   windscribevpn:
 #     username: <service username>
 #     password: <service password>

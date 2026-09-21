@@ -16,6 +16,8 @@ class NordVPN(Proxy):
         You must give a username and password. These are Service Credentials, not your Login Credentials.
         The Service Credentials can be found here: https://my.nordaccount.com/dashboard/nordvpn/
         """
+        username = "" if username is None or isinstance(username, bool) else str(username).strip()
+        password = "" if password is None or isinstance(password, bool) else str(password).strip()
         if not username:
             raise ValueError("No Username was provided to the NordVPN Proxy Service.")
         if not password:

@@ -88,6 +88,24 @@ def test_normalize_dl_config_maps_aliases():
     }
 
 
+def test_normalize_dl_config_hyphens():
+    assert normalize_dl_config(
+        {"download-processes": 6, "no-proxy-download": True, "v-lang": ["en"], "workers": 8}
+    ) == {
+        "download_processes": 6,
+        "no_proxy_download": True,
+        "v_lang": ["en"],
+        "workers": 8,
+    }
+
+
+def test_hyphenated_service_dl_key_applies():
+    ctx = make_ctx()
+    apply_service_dl_overrides(ctx, {"download-processes": 6, "downloads": 5}, log)
+    assert ctx.params["download_processes"] == 6
+    assert ctx.params["downloads"] == 5
+
+
 def test_unknown_key_warns(caplog):
     ctx = make_ctx()
     with caplog.at_level(logging.WARNING, logger=log.name):

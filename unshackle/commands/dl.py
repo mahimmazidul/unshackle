@@ -129,8 +129,16 @@ def parse_language(tag: Optional[str]) -> Optional[Language]:
 
 
 def normalize_dl_config(dl_config: dict[str, Any]) -> dict[str, Any]:
-    """Map aliased config keys (e.g. ``range``) to their Click parameter names (``range_``)."""
-    return {DL_OPTION_ALIASES.get(key, key): value for key, value in dl_config.items()}
+    """Map yaml ``dl`` keys onto Click parameter names.
+
+    Flag long names use underscores (``download_processes``). Hyphens are accepted
+    too (``download-processes``). ``range`` and ``list`` map onto ``range_`` / ``list_``.
+    """
+    mapped: dict[str, Any] = {}
+    for key, value in dl_config.items():
+        name = str(key).replace("-", "_")
+        mapped[DL_OPTION_ALIASES.get(name, name)] = value
+    return mapped
 
 
 ID_PROVIDER_KEYS = {"tmdb": "tmdb_api_key", "tvdb": "tvdb_api_key", "omdb": "omdb_api_key"}
@@ -1660,6 +1668,9 @@ class dl:
         set_speed_limit(speed_limit_bps)
         if speed_limit_bps:
             self.log.info(f"Speed limit: {format_speed(speed_limit_bps)}")
+        worker_count = workers or default_max_workers()
+        extra = f", {download_processes} process(es)/track" if download_processes and download_processes > 1 else ""
+        self.log.info(f"Using {downloads} download(s), {worker_count} worker(s)/track{extra}")
 
         if no_proxy or no_proxy_download:
             proxy_download = None

@@ -55,7 +55,7 @@ def search(ctx: click.Context, no_proxy: bool, profile: Optional[str] = None, pr
         service_config, service_config_path = load_service_config(service)
         if service_config_path:
             keys = ", ".join(sorted(map(str, service_config))) or "(none)"
-            log.info(f"Service Config loaded from {service_config_path} ({keys})")
+            log.debug(f"Service Config loaded from {service_config_path} ({keys})")
         else:
             try:
                 expected = Services.get_path(service) / config.filenames.config

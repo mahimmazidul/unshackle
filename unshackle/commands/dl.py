@@ -1193,7 +1193,7 @@ class dl:
                 self.service_config, service_config_path = load_service_config(self.service)
                 if service_config_path:
                     keys = ", ".join(sorted(map(str, self.service_config))) or "(none)"
-                    self.log.info(f"Service Config loaded from {service_config_path} ({keys})")
+                    self.log.debug(f"Service Config loaded from {service_config_path} ({keys})")
                     # log key names only: the full config carries service certificates,
                     # device fingerprints and endpoints that bloat the log and may be sensitive
                     log_event(

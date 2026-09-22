@@ -27,6 +27,20 @@ from unshackle.core.config import config
 from unshackle.core.themes import DEFAULT_THEME, PALETTES, apply_help_theme, resolve_palette
 
 
+def terminal_columns(fallback: int = 80) -> int:
+    """Physical terminal width, never less than 1."""
+    try:
+        columns = shutil.get_terminal_size(fallback=(fallback, 24)).columns
+    except OSError:
+        columns = fallback
+    return columns if columns > 0 else fallback
+
+
+def console_width(cap: int = 80) -> int:
+    """Log/progress width: at most *cap*, and never wider than the terminal."""
+    return max(20, min(cap, terminal_columns(cap)))
+
+
 class ComfyLogRenderer(LogRender):
     def __call__(
         self,
@@ -265,15 +279,12 @@ class ComfyConsole(Console):
         Returns:
             Status: A Status object you can use as a context manager.
         """
-        # The shared console is pinned to 80 columns. Filling a status line out to
-        # that width wraps on a portrait/narrow terminal, and Live only erases the
-        # last row, so every spinner frame leaves a ghost. Keep a small indent and
-        # never pad the line out to console.width.
-        try:
-            terminal_columns = shutil.get_terminal_size().columns
-        except OSError:
-            terminal_columns = self.width
-        render_width = min(self.width, terminal_columns) if terminal_columns and terminal_columns > 0 else self.width
+        # The shared console is capped at 80 columns. A Padding(expand=True) status
+        # fills that width, wraps on a portrait terminal, and Live only erases the
+        # last physical row — every spinner frame then leaves a ghost. Match Live
+        # to the real terminal, indent without expanding, and crop the message.
+        self.width = console_width()
+        render_width = self.width
 
         top, _right, bottom, left = Padding.unpack(pad)
         if render_width < 60:
@@ -296,7 +307,11 @@ class ComfyConsole(Console):
         )
 
         if pad:
-            return SyncLive(Padding(status_renderable, (top, 0, bottom, left)), console=self, transient=True)
+            return SyncLive(
+                Padding(status_renderable, (top, 0, bottom, left), expand=False),
+                console=self,
+                transient=True,
+            )
 
         return status_renderable
 
@@ -414,7 +429,7 @@ class _GradientPulse:
 console = ComfyConsole(
     log_time=False,
     log_path=False,
-    width=80,
+    width=console_width(),
     theme=Theme(
         {
             "bar.back": primary_scheme["dark_gray"],

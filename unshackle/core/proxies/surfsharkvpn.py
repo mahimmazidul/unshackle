@@ -77,9 +77,6 @@ class SurfsharkVPN(Proxy):
         self.username = username
         self.password = password
         self.server_map = {str(k).lower().strip(): v for k, v in (raw_map or {}).items()}
-        self.last_host: Optional[str] = None
-        self.last_name: Optional[str] = None
-        self.last_city: Optional[str] = None
 
         self.countries = self.get_countries()
 
@@ -88,18 +85,6 @@ class SurfsharkVPN(Proxy):
         servers = sum(1 for x in self.countries if x.get("connectionName"))
 
         return f"{countries} Countr{['ies', 'y'][countries == 1]} ({servers} Server{['s', ''][servers == 1]})"
-
-    def last_connection_display(self) -> Optional[str]:
-        """Short ``(Country - City): slug`` so the console does not wrap the proxy URI."""
-        if not self.last_host:
-            return None
-        host = self.last_host[: -len(CLUSTER_SUFFIX)] if self.last_host.endswith(CLUSTER_SUFFIX) else self.last_host
-        label = self.last_name or ""
-        if self.last_city:
-            label = f"{label} - {self.last_city}" if label else self.last_city
-        if label:
-            return f"({label}): {host}"
-        return f": {host}"
 
     def get_proxy(self, query: str) -> Optional[str]:
         """

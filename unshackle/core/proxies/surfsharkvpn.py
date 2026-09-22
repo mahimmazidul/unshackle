@@ -2,13 +2,15 @@ import json
 import random
 import re
 from typing import Optional
+from urllib.parse import quote
 
 import requests
 
 from unshackle.core.proxies.proxy import Proxy
 
 CLUSTER_SUFFIX = ".prod.surfshark.com"
-SLUG_RE = re.compile(r"^[a-z]{2}-[a-z0-9]+$")
+# Cluster slugs from the API, e.g. us-bos, in-del, uk-lon-st003.
+SLUG_RE = re.compile(r"^[a-z]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$")
 COUNTRY_RE = re.compile(r"^[a-z]+$")
 # Surfshark lists the UK as GB; hostnames still use uk-lon, uk-man, …
 CODE_ALIASES = {"uk": "gb", "gb": "gb"}
@@ -52,6 +54,7 @@ class SurfsharkVPN(Proxy):
         https://my.surfshark.com/vpn/manual-setup/main/openvpn
         not the email/password used to log in to the website.
 
+        Same URI shape as unshackle-dl: ``https://user:pass@{connectionName}:443``.
         ``server_map`` (also accepted as ``servers``) pins a query to a cluster
         hostname, e.g. ``us: us-dal`` or ``us: us-dal.prod.surfshark.com``.
         Extra yaml keys are ignored so a leftover ``enabled:`` does not fail load.
@@ -74,6 +77,9 @@ class SurfsharkVPN(Proxy):
         self.username = username
         self.password = password
         self.server_map = {str(k).lower().strip(): v for k, v in (raw_map or {}).items()}
+        self.last_host: Optional[str] = None
+        self.last_name: Optional[str] = None
+        self.last_city: Optional[str] = None
 
         self.countries = self.get_countries()
 
@@ -83,11 +89,23 @@ class SurfsharkVPN(Proxy):
 
         return f"{countries} Countr{['ies', 'y'][countries == 1]} ({servers} Server{['s', ''][servers == 1]})"
 
+    def last_connection_display(self) -> Optional[str]:
+        """Short ``(Country - City): slug`` so the console does not wrap the proxy URI."""
+        if not self.last_host:
+            return None
+        host = self.last_host[: -len(CLUSTER_SUFFIX)] if self.last_host.endswith(CLUSTER_SUFFIX) else self.last_host
+        label = self.last_name or ""
+        if self.last_city:
+            label = f"{label} - {self.last_city}" if label else self.last_city
+        if label:
+            return f"({label}): {host}"
+        return f": {host}"
+
     def get_proxy(self, query: str) -> Optional[str]:
         """
         Get an HTTPS proxy URI for a Surfshark cluster.
 
-        Supports:
+        Same forms as unshackle-dl:
         - Country code: ``us``, ``gb`` / ``uk``, ``in``
         - City: ``us:seattle``
         - Cluster slug or host: ``us-bos``, ``in-mum.prod.surfshark.com``
@@ -107,7 +125,7 @@ class SurfsharkVPN(Proxy):
         city = None
         if ":" in query:
             query, city = query.split(":", maxsplit=1)
-            city = city.strip()
+            city = city.strip() or None
 
         code = CODE_ALIASES.get(query, query)
         pinned = _hostname(self.server_map.get(f"{code}:{city}" if city else code)) or (
@@ -131,8 +149,24 @@ class SurfsharkVPN(Proxy):
             )
         return self._uri(hostname)
 
+    def _remember(self, hostname: str) -> None:
+        self.last_host = hostname
+        cluster = self._cluster(hostname)
+        self.last_name = (cluster or {}).get("country") or None
+        self.last_city = (cluster or {}).get("location") or (cluster or {}).get("city") or None
+
     def _uri(self, hostname: str) -> str:
-        return f"https://{self.username}:{self.password}@{hostname}:443"
+        self._remember(hostname)
+        user = quote(self.username, safe="")
+        password = quote(self.password, safe="")
+        return f"https://{user}:{password}@{hostname}:443"
+
+    def _cluster(self, hostname: str) -> Optional[dict]:
+        wanted = hostname.lower()
+        for cluster in self.countries:
+            if str(cluster.get("connectionName") or "").lower() == wanted:
+                return cluster
+        return None
 
     def get_country(self, by_code: Optional[str] = None) -> Optional[dict]:
         """Find the first cluster for a country code (GB also matches UK)."""
@@ -151,6 +185,9 @@ class SurfsharkVPN(Proxy):
     def get_random_server(self, country_id: str, city: Optional[str] = None):
         """
         Get a random ``connectionName`` for a country, optionally filtered by city.
+
+        Prefers ``type: generic`` clusters (the same pool the Surfshark app uses as
+        HTTPS proxies). Dedicated ``static`` hostnames are a fallback.
 
         Args:
             country_id: The country code (e.g. ``US``, ``GB``)
@@ -180,7 +217,9 @@ class SurfsharkVPN(Proxy):
         if not servers:
             raise ValueError(f"Could not get random server for country '{country_id}': no servers found.")
 
-        connection_names = [x["connectionName"] for x in servers if x.get("connectionName")]
+        generic = [x for x in servers if str(x.get("type") or "generic").lower() == "generic"]
+        pool = generic or servers
+        connection_names = [x["connectionName"] for x in pool if x.get("connectionName")]
         if not connection_names:
             raise ValueError(
                 f"Could not get random server for country '{country_id}': no servers with connectionName found."

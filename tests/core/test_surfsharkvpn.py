@@ -82,6 +82,7 @@ def provider():
 def test_hostname_from_slug_and_full_host():
     assert _hostname("us-dal") == "us-dal.prod.surfshark.com"
     assert _hostname("us-dal.prod.surfshark.com") == "us-dal.prod.surfshark.com"
+    assert _hostname("uk-lon-st003") == "uk-lon-st003.prod.surfshark.com"
     assert _hostname(1234) is None
     assert _hostname("1234") is None
 

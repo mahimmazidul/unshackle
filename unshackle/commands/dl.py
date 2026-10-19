@@ -71,7 +71,7 @@ from unshackle.core.proxies.resolve import (
 )
 from unshackle.core.service import Service, grow_session_pool
 from unshackle.core.service_config import check_service_config_keys
-from unshackle.core.services import Services, load_service_config
+from unshackle.core.services import ROUTING_PARAMS, Services, load_service_config
 from unshackle.core.temp import with_task_temp
 from unshackle.core.title_cacher import get_account_hash
 from unshackle.core.titles import Movie, Movies, Series, Song, Title_T
@@ -470,9 +470,13 @@ def cut_music_sample(title: Any, window: tuple[int, int], log: logging.Logger) -
 
 def apply_service_dl_overrides(ctx: click.Context, service_dl_config: dict[str, Any], log: logging.Logger) -> None:
     """Apply ``services.<TAG>.dl`` config onto ``ctx.params``. Explicit CLI/env values win.
-    The config replaces defaults and global ``dl:`` default_map values."""
+    The config replaces defaults and global ``dl:`` default_map values.
+    ``remote`` and ``server`` are skipped: they pick the code that runs, so ``Services.resolve_command`` sets
+    them before the service loads, and an API job takes them from its request."""
     params_by_name = {param.name: param for param in ctx.command.params if param.name}
     for name, value in normalize_dl_config(service_dl_config).items():
+        if name in ROUTING_PARAMS:
+            continue
         param = params_by_name.get(name)
         if param is None:
             log.warning(f"Ignoring unknown dl option '{name}' in service config")

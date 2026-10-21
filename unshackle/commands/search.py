@@ -98,6 +98,7 @@ def search(
             for proxy_provider in proxy_providers:
                 log.info(f"Loaded {proxy_provider.__class__.__name__}: {proxy_provider}")
 
+        ctx.params["proxy_arg"] = proxy
         if proxy:
             try:
                 requested_provider, query = split_proxy_query(proxy, proxy_providers)

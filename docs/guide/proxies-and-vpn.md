@@ -193,6 +193,23 @@ the mapped cluster. A query that already names one server, such as `nordvpn:us12
 does not accept an `@` part. An IP selector needs no whois lookup. On NordVPN it searches every server in
 the country, not only the recommended ones, so a pinned server still works when it is busy.
 
+To keep a selector for every run, put it in `server_map`. A value that starts with `-` or `@` applies
+to the region of its config key, and a value with `@` after a server name is a whole query. A selector in
+`--proxy` wins over one in `server_map`.
+
+```yaml title="unshackle.yaml"
+proxy_providers:
+  nordvpn:
+    server_map:
+      ca: -datacamp               # --proxy nordvpn:ca means nordvpn:ca@-datacamp
+  windscribevpn:
+    server_map:
+      fr:paris: "@m247"           # quote a value that starts with @
+  surfsharkvpn:
+    server_map:
+      fr: fr-bod@195.86.24.103    # always this one server
+```
+
 !!! note "Not every proxy provider"
     Only NordVPN, Surfshark and Windscribe read the `@` part. With a bare query such as
     `--proxy fr@datacamp`, the other proxy providers have no proxy for it, so prefix
@@ -789,7 +806,8 @@ combined username and password must be exactly 48 alphanumeric characters (case-
 the username must not contain an `@`. If validation fails, you have almost certainly used
 your login credentials instead of your service credentials.
 
-`server_map` is optional and maps a region (or `code:city`) to a pinned NordVPN server ID.
+`server_map` is optional and maps a region (or `code:city`) to a pinned NordVPN server ID, or to a
+selector (see [Choose a server network](#choose-a-server-network)).
 Its main use is to tune performance: for a given streaming service one specific server
 often performs noticeably better than NordVPN's recommended pick. So you can hard-code
 that server for a day or two as a workaround, until it degrades and you swap in another.
@@ -934,8 +952,10 @@ not contain `@`. YAML values are coerced to strings, so a numeric-looking userna
 fine.
 
 `server_map` is optional and maps a query (`us`, `us:seattle`) to a cluster slug
-(`us-dal`) or a full `connectionName` (`us-dal.prod.surfshark.com`). Numeric IDs from
-older configs are ignored (Surfshark no longer numbers clusters that way).
+(`us-dal`) or a full `connectionName` (`us-dal.prod.surfshark.com`), or holds a selector
+(see [Choose a server network](#choose-a-server-network)). Numeric IDs from older configs
+are ignored (Surfshark no longer numbers clusters that way). A `us:seattle` entry applies
+only to that city query, and it does not fall back to the `us` entry.
 
 You can also write the yaml key as `surfshark`, and `--proxy surfshark:in` matches the
 same provider as `--proxy surfsharkvpn:in`. Extra keys in the yaml block (for example a
@@ -982,7 +1002,8 @@ proxy_providers:
       us:seattle: us-seattle.totallyacdn.com
 ```
 
-**Required keys:** `username`, `password`. `server_map` optionally maps a region (or
+**Required keys:** `username`, `password`. `server_map` optionally takes a selector (see
+[Choose a server network](#choose-a-server-network)), or maps a region (or
 `region:city`) directly to a hostname.
 
 **Query forms:**

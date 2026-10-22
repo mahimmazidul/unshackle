@@ -13,7 +13,7 @@ import certifi
 import requests
 from urllib.parse import quote
 
-from unshackle.core.proxies.asn import describe, fold, is_ip, select, split_selector
+from unshackle.core.proxies.asn import describe, fold, is_ip, mapped_query, select, split_selector
 from unshackle.core.proxies.controld import build_query, parse_a_records
 from unshackle.core.proxies.proxy import Proxy
 from unshackle.core.utilities import COUNTRY_CODE_ALIASES
@@ -196,13 +196,13 @@ class SurfsharkVPN(Proxy):
         if not query:
             raise ValueError("The query provided is unsupported and unrecognized: ''")
 
-        # A pinned cluster wins over everything else, as the fork documented.
-        pinned_host = _hostname(self.server_map.get(query))
+        # A pinned cluster wins over everything else, as the fork documented (unless a selector follows).
+        pinned_host = _hostname(self.server_map.get(query)) if not selector else None
         if pinned_host:
             return self._uri(pinned_host)
 
         # A bare cluster slug or a full host only counts when the API lists that cluster.
-        slug = _hostname(query)
+        slug = _hostname(query) if not selector else None
         if slug:
             if self._cluster(slug) or self._cluster(slug.split(".", 1)[0]):
                 return self._uri(slug)
@@ -216,9 +216,14 @@ class SurfsharkVPN(Proxy):
         query = COUNTRY_CODE_ALIASES.get(query, query)
 
         server_map_key = f"{query}:{city}" if city else query
-        pinned = _hostname(self.server_map.get(server_map_key))
-        if pinned:
-            servers = [pinned]
+        mapped = self.server_map.get(server_map_key)
+        # An @ selector in the map value is a whole query for its region, unless --proxy has its own.
+        as_query = mapped_query(server_map_key, mapped) if mapped else None
+        if as_query and not selector:
+            return self.get_proxy(as_query)
+        pinned_server = _hostname(mapped if not as_query else None)
+        if pinned_server:
+            servers = [pinned_server]
         elif not city and any(
             _as_str(x.get("connectionName")).split(".", 1)[0] == query for x in self.countries
         ):

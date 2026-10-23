@@ -27,7 +27,6 @@ from uuid import UUID
 
 import click
 import mediaexport
-import yaml
 from click.core import ParameterSource
 from langcodes import Language, tag_is_valid
 from pymediainfo import MediaInfo
@@ -43,7 +42,7 @@ from rich.tree import Tree
 from unshackle.core import __version__, binaries, providers
 from unshackle.core.cdm import DecryptLabsRemoteCDM
 from unshackle.core.cdm.detect import cdm_type_stub, is_playready_cdm, is_remote_cdm, is_widevine_cdm
-from unshackle.core.config import cdm_entry_names_device, config, resolve_cdm_name, resolve_decryption
+from unshackle.core.config import cdm_entry_names_device, config, load_yaml, resolve_cdm_name, resolve_decryption
 from unshackle.core.console import GradientPulseBarColumn, SyncLive, console, listing_panel
 from unshackle.core.constants import (
     DEFAULT_SAMPLE,

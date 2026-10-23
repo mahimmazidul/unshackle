@@ -4,9 +4,8 @@ from pathlib import Path
 from typing import Optional
 
 import click
-import yaml
 
-from unshackle.core.config import config, restore_bool_languages
+from unshackle.core.config import config, load_yaml, restore_bool_languages
 from unshackle.core.utils.collections import ci_get, merge_dict
 
 # Service YAML that the matching service module indexes with a top-level key.
@@ -27,7 +26,7 @@ def unwrap_service_root(data: dict, tag: str) -> dict:
 
 def read_service_yaml(path: Path) -> dict:
     """Load a service config.yaml as a mapping. Empty files become {}."""
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw = load_yaml(path)
     if raw is None:
         return {}
     if not isinstance(raw, dict):

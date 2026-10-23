@@ -11,7 +11,7 @@ from rich.rule import Rule
 from rich.tree import Tree
 
 from unshackle.commands.dl import dl
-from unshackle.core.config import config
+from unshackle.core.config import config, load_yaml
 from unshackle.core.console import console
 from unshackle.core.constants import context_settings
 from unshackle.core.proxies import Basic

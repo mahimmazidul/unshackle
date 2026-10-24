@@ -136,14 +136,11 @@ class SurfsharkVPN(Proxy):
         username = _as_str(username)
         password = _as_str(password)
         if not username:
-            raise ValueError("No Username was provided to the SurfsharkVPN Proxy Service.")
+            raise ValueError("No username for the SurfsharkVPN proxy provider")
         if not password:
-            raise ValueError("No Password was provided to the SurfsharkVPN Proxy Service.")
+            raise ValueError("No password for the SurfsharkVPN proxy provider")
         if "@" in username:
-            raise ValueError(
-                "The Username and Password must be SurfsharkVPN Service Credentials, not your Login Credentials. "
-                "The Service Credentials can be found here: https://my.surfshark.com/vpn/manual-setup/main/openvpn"
-            )
+            raise ValueError("SurfsharkVPN needs its Service Credentials (not an email login)")
 
         server_map = server_map if server_map is not None else servers
         if server_map is not None and not isinstance(server_map, dict):
@@ -159,8 +156,7 @@ class SurfsharkVPN(Proxy):
             if not server or server.isdigit():
                 # A warning, not an error: one stale entry must not disable the whole proxy provider.
                 log.warning(
-                    "SurfsharkVPN: ignoring server_map entry '%s: %s'. Use a server name such as 'us-dal'. "
-                    "SurfsharkVPN no longer uses numeric server IDs.",
+                    "SurfsharkVPN: ignoring server_map entry '%s: %s', use a server name such as 'us-dal'",
                     region,
                     server,
                 )
@@ -353,9 +349,7 @@ class SurfsharkVPN(Proxy):
                 x for location, x in located if wanted and location.startswith(wanted)
             ]
             if not servers:
-                raise ValueError(
-                    f"No servers found in city '{city}'. Try a different city or check the city name spelling."
-                )
+                raise ValueError(f"No servers found in city '{city}'")
 
         return servers
 

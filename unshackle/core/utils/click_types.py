@@ -490,7 +490,7 @@ class SlowDelayRange(click.ParamType):
 
         match = re.match(r"^(\d+)-(\d+)$", str(value))
         if not match:
-            self.fail(f"'{value}' is not a valid range. Use format: MIN-MAX (e.g., 20-40)", param, ctx)
+            self.fail(f"'{value}' is not a valid range, expected MIN-MAX such as 20-40", param, ctx)
 
         low, high = int(match.group(1)), int(match.group(2))
         if low < 5:
@@ -582,7 +582,7 @@ class SampleRange(click.ParamType):
 
         match = re.match(r"^(\d+)-(\d+)$", str(value))
         if not match or int(match.group(1)) >= int(match.group(2)):
-            self.fail(f"'{value}' is not a valid sample window. Use format: START-END (e.g., 60-120)", param, ctx)
+            self.fail(f"'{value}' is not a valid sample window, expected START-END such as 60-120", param, ctx)
 
         return (int(match.group(1)), int(match.group(2)))
 

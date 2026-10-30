@@ -13,6 +13,7 @@ from unshackle.core.constants import (
     SPACED_AUDIO_CODECS,
     VIDEO_CODEC_MAP,
 )
+from unshackle.core.tracks import Video
 from unshackle.core.utilities import spoken_language
 
 if TYPE_CHECKING:
@@ -182,6 +183,8 @@ class Title:
                     context["hdr"] = "HDR"
                 else:
                     context["hdr"] = DYNAMIC_RANGE_MAP.get(hdr_format, "")
+                    if context["hdr"] == "HDR" and any(v.range == Video.Range.HDR10P for v in self.tracks.videos[:1]):
+                        context["hdr"] = DYNAMIC_RANGE_MAP["HDR10+"]
             elif trc and "HLG" in trc:
                 context["hdr"] = "HLG"
             else:

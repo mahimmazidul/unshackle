@@ -7,7 +7,7 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from http.cookiejar import CookieJar
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Optional, Sequence, TypeVar, Union
 
 if TYPE_CHECKING:
     import m3u8
@@ -88,10 +88,10 @@ class TimeoutHTTPAdapter(HTTPAdapter):
         self.default_timeout = timeout
         super().__init__(*args, **kwargs)
 
-    def send(self, request: Any, **kwargs: Any) -> Any:
+    def send(self, request: requests.PreparedRequest, *args: Any, **kwargs: Any) -> requests.Response:
         if kwargs.get("timeout") is None:
             kwargs["timeout"] = getattr(self, "default_timeout", DEFAULT_TIMEOUT)
-        return super().send(request, **kwargs)
+        return super().send(request, *args, **kwargs)
 
 
 def grow_session_pool(session: Any, size: int) -> None:
@@ -185,7 +185,7 @@ class Service(metaclass=ABCMeta):
     # one of them set keeps the server CDM even when the remote client picked its own device.
     SERVER_DEVICE_OPTIONS: tuple[str, ...] = ()
 
-    def __init__(self, ctx: click.Context):
+    def __init__(self, ctx: click.Context) -> None:
         console.print(Padding(Rule(f"[rule.text]Service: {self.__class__.__name__}"), (1, 2)))
 
         self.config = ctx.obj.config
@@ -198,7 +198,7 @@ class Service(metaclass=ABCMeta):
         self.cache_dir = config.directories.cache / self.__class__.__name__
 
         self.ctx = ctx
-        self.credential = None  # Will be set in authenticate()
+        self.credential: Optional[Credential] = None  # Will be set in authenticate()
         self.current_region = None  # Will be set based on proxy/geolocation
         self._input_bridge: Optional[InputBridge] = None
 
@@ -364,7 +364,7 @@ class Service(metaclass=ABCMeta):
             held = {Tracks.signature(track) for track in all_tracks}
             all_tracks.add([track for track in tracks if Tracks.signature(track) not in held], warn_only=True)
 
-        codecs = self.track_request.codecs or [None]
+        codecs: Sequence[Optional[Video.Codec]] = self.track_request.codecs or [None]
         ranges = self.track_request.ranges or [Video.Range.SDR]
 
         for range_val in ranges:
@@ -434,7 +434,7 @@ class Service(metaclass=ABCMeta):
                     status_forcelist=STATUS_FORCELIST,
                     allowed_methods=RETRY_METHODS,
                     respect_retry_after_header=True,
-                    retry_after_max=MAX_BACKOFF,
+                    retry_after_max=int(MAX_BACKOFF),
                 ),
                 pool_connections=POOL_MAX_SIZE,
                 pool_maxsize=POOL_MAX_SIZE,
@@ -525,7 +525,7 @@ class Service(metaclass=ABCMeta):
 
     def get_widevine_service_certificate(
         self, *, challenge: bytes, title: Title_T, track: AnyTrack
-    ) -> Union[bytes, str]:
+    ) -> Optional[Union[bytes, str]]:
         """
         Get the Widevine Service Certificate used for Privacy Mode.
 
@@ -619,7 +619,7 @@ class Service(metaclass=ABCMeta):
         This can be useful to store information on each title that you need later, like any sub-asset IDs, or such.
         """
 
-    def get_titles_cached(self, title_id: str = None) -> Titles_T:
+    def get_titles_cached(self, title_id: Optional[str] = None) -> Titles_T:
         """
         Cached wrapper around get_titles() to reduce redundant API calls.
 

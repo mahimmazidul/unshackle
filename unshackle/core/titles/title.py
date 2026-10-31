@@ -62,7 +62,7 @@ class Title:
         self.id = id_
         self.service = service
         self.language = language
-        self.data = data
+        self.data: Any = data
         self.anime: Optional[bool] = None
         self.daily: Optional[bool] = None
         self._tracks: Optional[Tracks] = None
@@ -80,7 +80,9 @@ class Title:
     def tracks(self, value: Tracks) -> None:
         self._tracks = value
 
-    def __eq__(self, other: Title) -> bool:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Title):
+            return NotImplemented
         return self.id == other.id
 
     def build_base_template_context(self, media_info: MediaInfo, show_service: bool = True) -> dict:

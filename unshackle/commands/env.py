@@ -385,7 +385,7 @@ def info() -> None:
     table.add_column("Path", style="text2", no_wrap=False, overflow="fold")
 
     path_vars = {
-        x: Path(os.getenv(x))
+        x: Path(os.environ[x])
         for x in ("TEMP", "APPDATA", "LOCALAPPDATA", "USERPROFILE")
         if sys.platform == "win32" and os.getenv(x)
     }

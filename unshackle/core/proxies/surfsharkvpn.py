@@ -120,7 +120,7 @@ class SurfsharkVPN(Proxy):
         server_map: Optional[dict] = None,
         servers: Optional[dict] = None,
         **_: object,
-    ):
+    ) -> None:
         """
         Proxy provider that uses SurfsharkVPN Service Credentials.
 

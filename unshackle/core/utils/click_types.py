@@ -1,11 +1,17 @@
 import re
 from datetime import date, timedelta
 from enum import Enum
-from typing import Any, Callable, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Union
 
 import click
 from click.shell_completion import CompletionItem
+
 from unshackle.core.constants import DEFAULT_SAMPLE
+
+if TYPE_CHECKING:
+    from unshackle.core.tracks.audio import Audio
+    from unshackle.core.tracks.subtitle import Subtitle
+    from unshackle.core.tracks.video import Video
 
 
 class VideoCodecChoice(click.Choice):
@@ -84,7 +90,7 @@ class SubtitleCodecChoice(click.Choice):
     - Common aliases: srt (for SubRip)
     """
 
-    def __init__(self, codec_enum: type[Subtitle.Codec]) -> None:
+    def __init__(self, codec_enum: "type[Subtitle.Codec]") -> None:
         self.codec_enum = codec_enum
         choices = []
         aliases = {}
@@ -133,7 +139,7 @@ class SubtitleCodecChoice(click.Choice):
 
     def convert(
         self, value: Any, param: Optional[click.Parameter] = None, ctx: Optional[click.Context] = None
-    ) -> Union[Subtitle.Codec, str, None]:
+    ) -> Union["Subtitle.Codec", str, None]:
         if not value:
             return None
 

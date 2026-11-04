@@ -109,24 +109,6 @@ def load_service(path: Path) -> type[Service]:
         ) from e
 
 
-def load_services(paths: list[Path]) -> tuple[dict[str, type[Service]], list[str]]:
-    """Load every Service, returning the good ones plus a list of load errors.
-
-    Importing this module must never raise: several commands import it, and Python
-    does not cache a failed import, so raising here would re-run and re-report for
-    every command. Instead we collect failures and let the caller surface them once,
-    cleanly, when it uses the services.
-    """
-    modules: dict[str, type[Service]] = {}
-    errors: list[str] = []
-    for path in paths:
-        try:
-            modules[path.parent.stem] = load_service(path)
-        except Exception as e:
-            errors.append(str(e))
-    return modules, errors
-
-
 def register_service_binaries(modules: dict[str, type[Service]]) -> None:
     """Register custom binary dependencies declared by services via get_binaries()."""
 
@@ -145,51 +127,65 @@ def register_service_binaries(modules: dict[str, type[Service]]) -> None:
                 log.warning(f"Failed to register custom binaries for service {tag}: {e}")
 
 
-# Service modules are loaded on demand. The normal service-facing paths call
-# ensure_all_loaded() before presenting a full service inventory; the watcher only
-# imports the one configured service it needs for a metadata poll.
-MODULES: dict[str, object] = {}
+MODULES: dict[str, type[Service]] = {}
 LOAD_ERRORS: list[str] = []
 ALIASES: dict[str, tuple[str, ...]] = {}
-ALL_SERVICES_LOADED = False
 
 
-def load_one(tag: str) -> object:
-    """Load one discovered service without importing unrelated service modules."""
-    if tag in MODULES:
-        return MODULES[tag]
-    path = next((path for path in SERVICES if path.parent.stem == tag), None)
-    if path is None:
+def load_one(tag: str) -> type[Service]:
+    """Load one discovered service, keeping the watcher's entry point working.
+
+    Upstream's ``ensure_loaded`` is the real loader. An unknown tag raises KeyError;
+    a tag whose import failed raises RuntimeError carrying the recorded cause.
+    """
+    service = ensure_loaded(tag)
+    if service is None:
+        # A failed tag keeps its load error in LOAD_ERRORS, and click reports it from there,
+        # so both an unknown tag and a broken one raise KeyError here.
         raise KeyError(f"There is no Service added by the Tag '{tag}'")
-    try:
-        module = load_service(path)
-    except Exception as exc:
-        error = str(exc)
-        if error not in LOAD_ERRORS:
-            LOAD_ERRORS.append(error)
-        raise RuntimeError(error) from exc
-    MODULES[tag] = module
-    ALIASES[tag] = getattr(module, "ALIASES", ())
-    register_service_binaries({tag: module})
-    return module
+    return service
 
 
 def ensure_all_loaded() -> None:
-    """Load every service for commands/API paths that need a complete inventory."""
-    global ALL_SERVICES_LOADED
-    if ALL_SERVICES_LOADED:
-        return
-    modules, errors = load_services(SERVICES)
-    MODULES.update(modules)
-    LOAD_ERRORS.extend(error for error in errors if error not in LOAD_ERRORS)
-    ALIASES.update({tag: getattr(module, "ALIASES", ()) for tag, module in modules.items()})
-    register_service_binaries(modules)
-    ALL_SERVICES_LOADED = True
+    """Load every service, for a caller presenting a full inventory (the fork's name for load_all)."""
+    load_all()
 
 PENDING: set[str] = set()
 PENDING_SINCE: dict[str, float] = {}
 LOADED_COMMITS: dict[str, str] = {}
-RELOAD_LOCK = threading.Lock()
+RELOAD_LOCK = threading.RLock()
+
+
+def ensure_loaded(tag: str) -> type[Service] | None:
+    """Import one discovered service on first use; None when the tag is unknown or its import failed.
+
+    Startup imports no service: a command that runs one service pays only for that one.
+    A failed import is kept in ``LOAD_ERRORS`` and is not tried again until a reload.
+    """
+    service = MODULES.get(tag)
+    if service is not None or tag in failed_tags(LOAD_ERRORS):
+        return service
+    with RELOAD_LOCK:
+        if tag in MODULES or tag in failed_tags(LOAD_ERRORS):
+            return MODULES.get(tag)
+        path = next((path for path in SERVICES if path.parent.stem == tag), None)
+        if path is None:
+            return None
+        try:
+            service = load_service(path)
+        except Exception as e:
+            LOAD_ERRORS.append(str(e))
+            return None
+        MODULES[tag] = service
+        ALIASES[tag] = getattr(service, "ALIASES", ())
+        register_service_binaries({tag: service})
+        return service
+
+
+def load_all() -> None:
+    """Import every discovered service, for the callers that need all of them (help, serve, env)."""
+    for tag in Services.get_tags():
+        ensure_loaded(tag)
 
 
 def record_loaded_commits(tags: Iterable[str] | None = None) -> None:
@@ -357,7 +353,7 @@ def log_load_issues() -> None:
         log.error(f"Service skipped: {err}")
 
 
-def check_load_errors() -> None:
+def check_load_errors(tag: str | None = None) -> None:
     """Log a one-line load summary (once) and raise a single clean error on failures.
 
     unshackle calls this when it needs the services (listing/resolving), so Click
@@ -365,24 +361,27 @@ def check_load_errors() -> None:
     command that imports this module. This function summarises the duplicate services
     (a tag that an earlier, higher-priority source also gives, and which unshackle
     ignores). The full list - naming the path used and the duplicate ignored - is
-    debug-only.
+    debug-only. With *tag*, only that service's load error counts, and the summary names
+    only a duplicate of that tag.
     """
     if DIRTY_REPOS:
         joined = "\n".join(f"  - {p}" for p in DIRTY_REPOS)
         raise click.ClickException("Service repo has local changes, not refreshing:\n" + joined)
-    ensure_all_loaded()
+    errors = [err for err in LOAD_ERRORS if tag is None or err.startswith(f"{tag}: ")]
+    if errors:
+        joined = "\n".join(f"  - {err}" for err in errors)
+        raise click.ClickException(f"Failed to load {len(errors)} service(s):\n{joined}")
     global SUMMARY_LOGGED
-    if not SUMMARY_LOGGED:
-        SUMMARY_LOGGED = True
-        summary = f"Loaded {len(MODULES)} services"
-        if SHADOWED:
-            summary += f" ({len(SHADOWED)} duplicate(s) ignored)"
-        log.info(summary)
-        for shadow in SHADOWED:
-            log.debug("%s", shadow)
-    if LOAD_ERRORS:
-        joined = "\n".join(f"  - {err}" for err in LOAD_ERRORS)
-        raise click.ClickException(f"Failed to load {len(LOAD_ERRORS)} service(s):\n{joined}")
+    if SUMMARY_LOGGED:
+        return
+    SUMMARY_LOGGED = True
+    shadows = SHADOWED if tag is None else [shadow for shadow in SHADOWED if shadow.startswith(f"{tag}: ")]
+    if tag is None:
+        log.info(f"Loaded {len(MODULES)} services" + (f" ({len(SHADOWED)} duplicate(s) ignored)" if SHADOWED else ""))
+    elif shadows:
+        log.info(f"{tag}: {len(shadows)} duplicate(s) ignored")
+    for shadow in shadows:
+        log.debug("%s", shadow)
 
 
 ROUTING_PARAMS = ("remote", "server")
@@ -433,12 +432,12 @@ class Services(click.Group):
                     if remote_tag not in tags:
                         tags.append(remote_tag)
             return tags
+        load_all()
         check_load_errors()
         return Services.get_tags()
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command:
         """Load the Service and return the Click CLI method."""
-        check_load_errors()
         tag = Services.get_tag(name)
 
         if Services.is_import(ctx):
@@ -449,6 +448,8 @@ class Services(click.Group):
         if remote:
             return Services.make_remote_command(name, routing.get("server"))
 
+        ensure_loaded(tag)
+        check_load_errors(tag)
         try:
             service = Services.load(tag)
         except KeyError as e:
@@ -646,28 +647,19 @@ class Services(click.Group):
                 return tag
 
         for tag in tags:
+            if tag not in ALIASES:
+                ensure_loaded(tag)
             if any(value_lower == alias.lower() for alias in ALIASES.get(tag, ())):
                 return tag
 
-        # Aliases live in service modules. Only the uncommon alias path needs the
-        # complete inventory; an exact tag remains a single-module lazy import.
-        if not ALL_SERVICES_LOADED:
-            ensure_all_loaded()
-            for tag in tags:
-                if any(value_lower == alias.lower() for alias in ALIASES.get(tag, ())):
-                    return tag
+        # Aliases live in service modules, so the uncommon alias path above already
+        # imported them; an exact tag stays a single-module lazy import.
         return value
 
     @staticmethod
     def load(tag: str) -> type[Service]:
-        """Load a Service module by Service tag."""
-        module = MODULES.get(tag)
-        if module:
-            return module
-        try:
-            return load_one(tag)
-        except KeyError:
-            raise KeyError(f"There is no Service added by the Tag '{tag}'") from None
+        """Load a Service module by Service tag, importing only that tag."""
+        return load_one(tag)
 
     @staticmethod
     def get_vault_tag(name: str) -> str:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
@@ -88,12 +88,13 @@ def test_hostname_from_slug_and_full_host():
 
 
 def test_yaml_ints_and_extra_keys_are_accepted():
-    with patch.object(SurfsharkVPN, "get_countries", return_value=CLUSTERS):
+    # Upstream's catalogue loads on first use; a caught-offline test still needs one.
+    with patch.object(SurfsharkVPN, "countries", new_callable=PropertyMock, return_value=CLUSTERS):
         p = SurfsharkVPN(username=12345, password=67890, enabled=True, servers={"us": "us-dal"})
-    assert p.username == "12345"
-    assert p.password == "67890"
-    uri = p.get_proxy("us")
-    assert uri.endswith("@us-dal.prod.surfshark.com:443")
+        assert p.username == "12345"
+        assert p.password == "67890"
+        uri = p.get_proxy("us")
+        assert uri.endswith("@us-dal.prod.surfshark.com:443")
 
 
 def test_email_login_is_rejected():

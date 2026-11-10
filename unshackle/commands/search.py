@@ -51,7 +51,7 @@ from unshackle.core.utils.redact import mask_proxy
     "--local-proxy",
     is_flag=True,
     default=False,
-    help="With --remote, the server sends its service requests out through this machine's own connection (and any VPN on it). Works with no other proxy option.",
+    help="With --remote, the server sends its service requests out through this machine's own connection (and any VPN on it), or through a --proxy dialled from this machine.",
 )
 @click.option("--no-proxy", is_flag=True, default=False, help="Force disable all proxy use.")
 @click.option(

@@ -449,6 +449,7 @@ class Config:
             "video",
             "hdr",
             "hfr",
+            "3d",
             "edition",
             "repack",
             "lang_tag",

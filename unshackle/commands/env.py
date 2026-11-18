@@ -148,10 +148,21 @@ def get_dependencies() -> list[dict]:
     return deps
 
 
+def iter_files(root: Path):
+    """Every regular file under ``root``, dotfiles included (glob("**/*") skips them)."""
+    for child in root.rglob("*"):
+        try:
+            if child.is_file() and not child.is_symlink():
+                yield child
+        except OSError:
+            continue
+
+
 def clear_directory(path: Path) -> tuple[int, int]:
     """Delete a directory's contents, returning (files_removed, freed_bytes). Recreates the dir.
 
-    Skips task directories that belong to a running download.
+    Skips task directories that belong to a running download. Counts dotfiles too, so the
+    task-dir lock (``.lock``, and a ``.lock.pid`` from the NFS fallback) is reported.
     """
     files_count = 0
     freed_bytes = 0
@@ -161,13 +172,12 @@ def clear_directory(path: Path) -> tuple[int, int]:
             if is_real_dir and entry.name.startswith(TASK_PREFIX) and not is_stale(entry):
                 continue
             if is_real_dir:
-                for child in entry.glob("**/*"):
-                    if child.is_file():
-                        files_count += 1
-                        try:
-                            freed_bytes += child.stat().st_size
-                        except OSError:
-                            pass
+                for child in iter_files(entry):
+                    files_count += 1
+                    try:
+                        freed_bytes += child.stat().st_size
+                    except OSError:
+                        pass
                 shutil.rmtree(entry, ignore_errors=True)
             else:
                 files_count += 1
@@ -238,6 +248,8 @@ def check() -> None:
         summary_parts.append(f"[red]Missing required: {', '.join(missing_required)}[/red]")
 
     console.print(Padding("  ".join(summary_parts), (0, 3, 1, 3)))
+    if not all_required_installed:
+        console.print(Padding("[text]Run [cyan]unshackle setup[/cyan] to install them.[/text]", (0, 3, 1, 3)))
 
 
 @env.command()
@@ -378,10 +390,14 @@ def info() -> None:
         if sys.platform == "win32" and os.getenv(x)
     }
 
-    for name in sorted(dir(config.directories)):
-        if name.startswith("__") or name == "app_dirs":
-            continue
-        attr_value = getattr(config.directories, name)
+    rows = {
+        name: getattr(config.directories, name)
+        for name in dir(config.directories)
+        if not name.startswith("__") and name != "app_dirs"
+    }
+    rows["user_binaries"] = binaries.user_binaries_dir
+    for name in sorted(rows):
+        attr_value = rows[name]
 
         if isinstance(attr_value, list):
             paths_str = "\n".join(str(p) for p in attr_value)

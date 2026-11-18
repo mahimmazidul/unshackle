@@ -6,6 +6,7 @@ instead of short-circuiting on a vault hit for the PSSH KID alone, and the batch
 path must give each track the full bundle without borrowing another PSSH's keys.
 """
 
+import asyncio
 import base64
 import json
 from types import SimpleNamespace
@@ -118,6 +119,7 @@ async def test_batch_shares_full_bundle_per_pssh(monkeypatch):
 
     tracks = {tid: SimpleNamespace(id=tid, drm=[object()]) for tid in track_pssh}
     session = SimpleNamespace(
+        lock=asyncio.Lock(),
         service_tag="EXAMPLE",
         service_instance=SimpleNamespace(),
         served_keys={},
@@ -131,7 +133,7 @@ async def test_batch_shares_full_bundle_per_pssh(monkeypatch):
     bundle_a = {REAL.hex: "k_real", PSSH_KID.hex: "k_pssh", OTHER.hex: "k_other"}
     bundle_b = {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "k_b"}
 
-    def fake_single(service, title, track, pssh_str, drm_type, request, sources=None):
+    def fake_single(service, title, track, pssh_str, drm_type, request, sources=None, refusal=None, vault_only=False):
         calls.append(pssh_str)
         return dict(bundle_a) if pssh_str == pssh_a else dict(bundle_b)
 
@@ -140,6 +142,7 @@ async def test_batch_shares_full_bundle_per_pssh(monkeypatch):
     monkeypatch.setattr(handlers, "ensure_track_drm", lambda track, session=None, init_data=None: None)
     monkeypatch.setattr(handlers, "find_title_for_track", lambda tid, session: SimpleNamespace())
     monkeypatch.setattr(handlers, "detect_cdm_type_for_service", lambda tag, cfg: "playready")
+    monkeypatch.setattr(handlers, "resolve_device_name", lambda *a, **k: "dev")
     monkeypatch.setattr(handlers, "drm_preference_name", lambda track: None)
     monkeypatch.setattr(handlers, "extract_pssh_from_track", lambda track, drm: track_pssh[track.id])
     monkeypatch.setattr(handlers, "handle_single_server_cdm", fake_single)

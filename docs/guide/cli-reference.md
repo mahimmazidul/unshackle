@@ -5,11 +5,15 @@ A complete reference for every `unshackle` command, subcommand, and flag. This p
 - **[`dl`](#dl)**: the download pipeline (the command you use most).
 - **[`search`](#search)**: find titles on a service.
 - **[`import`](#import)**: rebuild a download from an export file.
+- **[`setup`](#setup)**: install the external tools and make a first config.
 - **[`cfg`](#cfg)**, **[`env`](#env)**: manage configuration and the environment.
 - **[`kv`](#kv)**: Key Vault operations.
 - **[`wvd`](#wvd)**, **[`prd`](#prd)**: Widevine / PlayReady device management.
 - **[`serve`](#serve)**: operate the local CDM and REST API server.
 - **[`util`](#util)**: helper media utilities.
+
+!!! note "Running commands from a clone"
+    This page uses the bare `unshackle` command. From a git clone, the recommended install, run each command as `uv run unshackle ...`.
 
 !!! tip "Getting help on any command"
     Every command accepts `-h`, `--help`, or `-?`. For example `unshackle dl --help` or `unshackle wvd new --help`. Each service defines its own arguments for `dl` and `search` (such as a title ID or a query), so examine `unshackle dl SERVICE --help` for those.
@@ -79,7 +83,7 @@ unshackle dl [OPTIONS] SERVICE [SERVICE ARGS...]
 | `-c`, `--channels` | - | Audio channels; matches sub-layouts (5.1 ≈ 6.0). |
 | `-naa`, `--noatmos` | off | Exclude Dolby Atmos audio tracks. |
 | `--worst` | off | Pick the lowest bitrate within the requested quality. **Requires `-q`.** |
-| `--best-available`, `--warn-only` | off | Warn and continue when a requested resolution, range, or language is absent, instead of failing. |
+| `--best-available`, `--warn-only` | off | Warn and continue when a requested resolution, range, or language is absent, instead of failing. With `--all-drm`, also when one DRM system does not license. |
 | `-rvb`, `--real-video-bitrate` | off | Probe real media size for true video bitrates, overriding the manifest. |
 | `-rab`, `--real-audio-bitrate` | off | Same for audio (slower). |
 
@@ -98,6 +102,7 @@ unshackle dl [OPTIONS] SERVICE [SERVICE ARGS...]
 | `--require-video` | - | Video langs that must exist. The title fails even with `--best-available`. Does not select tracks. |
 | `--require-subs` | - | Subtitle langs that must exist. Fails the title if one is missing. `--s-lang` still decides what to keep. |
 | `-fs`, `--forced-subs` | off | Include forced subtitle tracks. |
+| `-fso`, `--forced-subs-only` | off | Keep only forced subtitle tracks; drop the other subtitles. Implies `-fs`. |
 | `-fsl`, `--forced-s-lang` | none | Language(s) wanted for forced subtitles; implies `-fs`. A `-` prefix excludes. |
 | `--exact-lang` | off | Exact matching only: `-l es-419` matches `es-419`, not `es-ES`. Applies to selection and to sort order. |
 | `--sub-format` | - | Output subtitle format (`SRT`/`srt`, `VTT`/`webvtt`, `ASS`/`ssa`, `TTML`, `SMI`, ...), or `original` to keep the source format. |
@@ -117,6 +122,7 @@ unshackle honours the special language tokens `orig`, `all`, and `best` everywhe
 | `-w`, `--wanted` | Wanted episodes, e.g. `S01-S05,S07`, `S01E01-S02E03`. Supports exclusions with a leading `-` (e.g. `-S03`). For a [split episode](downloading.md#split-episodes), `.N` picks one part (`S01E01.2`), a range must stay inside the episode (`S01E01.1-S01E01.3`), and `S01E01` on its own takes every part. For a [dated episode](downloading.md#daily-and-date-based-content), a token can also be an ISO air date (`2026-08-11`) or a date range with a colon (`2026-08-01:2026-08-31`). For a [music release](downloading.md#music-tracks), a token is a track number (`1-5`, `1,3,7`), or `{disc}x{track}` (`2x3`) when the release has more than one disc. |
 | `--select-titles` | Interactively select what to download: episodes of a series, or films when a title has more than one. **Cannot combine with `-w`.** |
 | `--latest-episode` | Download only the single most recent episode. |
+| `--latest-episodes N` | Download only the N most recent episodes. |
 | `--list-titles` | List titles only; do not download. |
 
 ### Track-type inclusion / exclusion
@@ -134,6 +140,7 @@ Keep only certain track types, or skip certain track types.
 | Flag | Description |
 |---|---|
 | `-ad`, `--audio-description` | Include descriptive (audio-description) tracks. |
+| `-ado`, `--audio-description-only` | Keep only descriptive (audio-description) tracks; drop the standard audio. Does not need `-ad`. |
 | `--skip-subtitle-errors` | Skip a failed subtitle instead of aborting the title. Video/audio failures remain fatal. |
 
 ### Output, muxing & files
@@ -146,6 +153,8 @@ Keep only certain track types, or skip certain track types.
 | `--no-folder` | Disable folder creation for TV shows. |
 | `--no-source` | Remove the source tag from the filename/path. |
 | `--no-mux` | Do not mux; keep individual track files. |
+| `--sample` | Download a short sample and write it with a `SAMPLE` tag on the filename in a `Sample` folder inside the output folder. Bare `--sample` = 60 seconds from 2 minutes in; `--sample 0-60` = a custom window in seconds. |
+| `--include-sample` | Download the full title, then also cut a 60 second sample from each muxed file into a `Sample` folder next to it. |
 | `--tag` | Group tag override. |
 | `--repack` | Add a `REPACK` tag to the filename. |
 | `--postscript` | Run a command after each output file, with `{variable}` placeholders substituted. Repeatable. Replaces the `post_scripts` config for this run. See [Post-scripts](../reference/configuration/post-scripts.md). |
@@ -187,15 +196,16 @@ order the service used, then renumbers the episodes into the order you asked for
 | Flag | Description |
 |---|---|
 | `--cdm-only` / `--vaults-only` | Use only the CDM, or only Key Vaults, for key acquisition. |
-| `--cdm <name>` | Use the named CDM device from the `cdm` config mapping for this run, ignoring the service/default mapping. |
+| `--cdm <name>` | Use the named CDM device from the `cdm` config mapping for this run, ignoring the service/default mapping. Over `--remote`, that device licenses the remote session, not the server CDM. |
 | `--skip-dl` | Skip the download but still retrieve keys. |
-| `--export` | Export track info and keys to a JSON file in the exports directory. |
+| `--all-drm` | License each track with both Widevine and PlayReady. Needs a CDM for each DRM system. Key Vaults are read first; `--cdm-only` sends a challenge for each system. Not for use with `--cdm`. |
+| `--export` | Export track info and keys to a `mediaexport` JSON file in the exports directory. |
 
 ### Network & proxy
 
 | Flag | Description |
 |---|---|
-| `--proxy` | Proxy URI, a 2-letter country code resolved from configured providers, or `provider:region` (e.g. `nordvpn:ca`, `gluetun:us`, `protonvpn:de:berlin`). |
+| `--proxy` | Proxy URI, a country or location code resolved from configured providers, or `provider:region` (e.g. `nordvpn:ca`, `gluetun:us`, `protonvpn:de:berlin`, `controld:yul`). |
 | `--no-proxy` | Force-disable all proxy use. |
 | `--no-proxy-download` | Bypass the proxy for **all downloads** (manifest, licence, and auth stay proxied). |
 | `--proxy-download` | Use a different proxy for **all downloads**, in the same forms as `--proxy` (manifest, licence, and auth stay on `--proxy`). |
@@ -232,10 +242,12 @@ unshackle search [OPTIONS] SERVICE [QUERY...]
 
 Each service defines its own query syntax. unshackle prints the results as a tree of titles with their service IDs. Feed an ID straight into `dl`.
 
+unshackle logs in to the service before the search. A service that declares a search with no login is the exception: unshackle then reads no cookies and no credentials, and `--profile` has no effect.
+
 | Option | Description |
 |---|---|
 | `-p`, `--profile` | Profile for credentials and cookies. |
-| `--proxy` | Proxy URI, 2-letter country code, or `provider:region`. |
+| `--proxy` | Proxy URI, country or location code, or `provider:region` (e.g. `controld:ca`). |
 | `--no-proxy` | Force-disable all proxy use. |
 
 !!! example
@@ -263,7 +275,25 @@ unshackle forwards any `dl` options after the file verbatim, so you can override
     unshackle import export.json -r HDR10 --proxy US
     ```
 
-The export file must be a valid v2 export from a current version of unshackle, made with `dl --export`, and must contain a `service` tag.
+The export file can be a `mediaexport` file from `dl --export`, an export from an older version of unshackle, or an export from unidl. The file must name the service it came from.
+
+---
+
+## `setup`
+
+Install the external tools and make a first config.
+
+```
+unshackle setup
+```
+
+The command takes no options and asks its questions at the prompt. It shows the missing [external tools](../getting-started/installation.md#external-tools-on-your-path) and downloads the ones you accept. It puts them in a `binaries` folder, in the package folder of a git clone or in your user data directory for a `uv` tool install. If no `unshackle.yaml` exists, it writes a first one: inside the clone, or to your user config directory for a `uv` tool install. It then makes the data folders and imports `.wvd` and `.prd` devices, one file or folder per answer, until you give an empty answer. It ends with a summary of the tools, the path of a config that it wrote, and a pointer to `env check`. You can run it again: it skips the tools it finds and never overwrites a config. [Installation](../getting-started/installation.md#what-unshackle-setup-does) gives the full steps and where each file goes.
+
+!!! example
+    ```shell
+    uv run unshackle setup   # from a git clone
+    unshackle setup          # from a uv tool install
+    ```
 
 ---
 
@@ -311,7 +341,7 @@ unshackle env COMMAND [ARGS]...
 unshackle env check
 ```
 
-Prints a dependency table (Category / Tool / Status / Required / Purpose) that shows which external tools unshackle finds on your `PATH`. It also gives a summary of how many required tools are present.
+Prints a dependency table (Category / Tool / Status / Required / Purpose) that shows which external tools unshackle finds on your `PATH`. It also gives a summary of how many required tools are present. If a required tool is missing, it tells you to run [`unshackle setup`](#setup).
 
 | Category | Tools |
 |---|---|

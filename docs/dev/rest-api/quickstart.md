@@ -20,11 +20,21 @@ You need a working unshackle install with services and CDM devices already confi
     unshackle --help
     ```
 
+If you have no install yet, follow [Installation](../../getting-started/installation.md). Then check your tools:
+
 === "From a clone"
 
     ```shell
-    uv run unshackle --help
+    uv run unshackle env check
     ```
+
+=== "Installed as a uv tool"
+
+    ```shell
+    unshackle env check
+    ```
+
+This page uses the bare `unshackle` command. From a git clone, the recommended install, run each command as `uv run unshackle ...`.
 
 ---
 
@@ -147,6 +157,7 @@ curl "$BASE/api/services" \
       "help": "EXAMPLE service documentation...",
       "needs_auth": true,
       "has_search": true,
+      "anonymous_search": false,
       "has_drm": true,
       "auth_methods": ["cookies", "credentials"],
       "cli_params": []

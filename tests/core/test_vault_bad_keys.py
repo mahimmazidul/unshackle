@@ -232,14 +232,17 @@ def test_retry_takes_the_next_parallel_answer_without_a_new_request(tmp_path: Pa
     from tests.core.test_vaults_lookup import FakeVault
 
     local = SQLite("local", tmp_path / "local.db")
-    fast = FakeVault("fast", BAD, delay=0.01)
-    slow = FakeVault("slow", GOOD, delay=0.2)
+    # the fast answer must land after the slow query has started, or the pool shutdown cancels
+    # the slow query before it runs and it never reaches candidates; a loaded CI runner can take
+    # tens of milliseconds to start the second worker thread
+    fast = FakeVault("fast", BAD, delay=0.1)
+    slow = FakeVault("slow", GOOD, delay=0.3)
     vaults = Vaults("SVC")
     vaults.vaults = [local, fast, slow]
 
     assert vaults.get_key(KID) == (BAD, fast)
     vaults.flag_bad_key(KID, BAD)
-    time.sleep(0.4)  # the slow answer lands in candidates after the first call returned
+    time.sleep(0.5)  # the slow answer lands in candidates after the first call returned
     assert vaults.get_key(KID) == (GOOD, slow)
     assert fast.calls == 1 and slow.calls == 1
 
@@ -327,6 +330,33 @@ def test_a_licence_key_clears_a_flag_from_an_earlier_run(tmp_path: Path, monkeyp
     cmd.cache_keys_to_vaults({KID: GOOD})
     assert not local.is_bad_key(KID, GOOD)
     assert local.get_key(KID, "SVC") == GOOD
+
+
+def test_a_licence_with_no_new_keys_sends_no_vault_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A PSSH KID the licence never answers forces a licence on every run; the vaults must not get an empty push."""
+    vault = SimpleNamespace(no_push=False, add_keys=lambda *_: pytest.fail("empty push reached a vault"))
+    vaults = Vaults("SVC")
+    vaults.vaults = [vault]  # type: ignore[list-item]
+    cmd = make_cmd(monkeypatch, vaults)
+    cmd.cache_keys_to_vaults({})
+    assert cmd.vault_cache_tally is None
+
+
+def test_the_cached_key_count_is_unique_and_skipped_without_vaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two tracks licensed in parallel can return the same key; --cdm-only loads no vaults at all."""
+    other = UUID(int=9)
+    vaults = Vaults("SVC")
+    vaults.vaults = [SQLite("local", tmp_path / "local.db")]
+    cmd = make_cmd(monkeypatch, vaults)
+    cmd.cache_keys_to_vaults({KID: GOOD})
+    cmd.cache_keys_to_vaults({KID: GOOD, other: GOOD})
+    assert cmd.vault_cache_tally == ({KID, other}, 1)
+
+    cmd = make_cmd(monkeypatch, Vaults("SVC"))
+    cmd.cache_keys_to_vaults({KID: GOOD})
+    assert cmd.vault_cache_tally is None
 
 
 def test_bulk_add_refuses_a_flagged_pair_in_any_case_or_kid_form(tmp_path: Path) -> None:

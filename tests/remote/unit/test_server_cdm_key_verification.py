@@ -28,6 +28,7 @@ def remote_service() -> RemoteService:
     svc.server_vault_keys = {}
     svc.server_vault = ServerVault(svc)
     svc._session_id = "sess"
+    svc.client_licensed = set()
     svc.log = SimpleNamespace(warning=lambda *a, **k: None)
     return svc
 
@@ -106,7 +107,7 @@ async def test_batch_reports_vault_keys_from_the_init_segment_pssh(monkeypatch):
     async def validated(sid, req):
         return session
 
-    def fake_single(service, title, track, pssh_str, drm_type, request, sources=None):
+    def fake_single(service, title, track, pssh_str, drm_type, request, sources=None, refusal=None, vault_only=False):
         if pssh_str == "init":
             sources[CDM_KID.hex] = "sqlite"
             return {CDM_KID.hex: "v"}
@@ -117,6 +118,7 @@ async def test_batch_reports_vault_keys_from_the_init_segment_pssh(monkeypatch):
     monkeypatch.setattr(handlers, "ensure_track_drm", lambda track, session=None, init_data=None: None)
     monkeypatch.setattr(handlers, "find_title_for_track", lambda tid, session: SimpleNamespace())
     monkeypatch.setattr(handlers, "detect_cdm_type_for_service", lambda tag, cfg: "widevine")
+    monkeypatch.setattr(handlers, "resolve_device_name", lambda *a, **k: "dev")
     monkeypatch.setattr(handlers, "fetch_init_segment", lambda track, sess: b"init")
     monkeypatch.setattr(
         handlers, "drm_from_init_segment", lambda track, session=None, init_data=None: [_WV("init", [CDM_KID])]

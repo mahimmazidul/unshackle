@@ -18,7 +18,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from unshackle.core.api.events import bus, publish_service_event
 from unshackle.core.api.sanitize import sanitize_log
-from unshackle.core.utils.click_types import VIDEO_CODEC_LIST
+from unshackle.core.utils.click_types import AUDIO_CODEC_LIST, VIDEO_CODEC_LIST
 from unshackle.core.utils.redact import REDACTED, URL_USERINFO_RE, redact_path, redact_text
 
 log = logging.getLogger("download_manager")
@@ -124,6 +124,11 @@ class DownloadJob:
     segments_total: float = 0.0
     speed: Optional[str] = None
 
+    # Prompt a service raised through prompt_user() and waits on; answered by submit_input().
+    input_prompt: Optional[str] = None
+    # Message a service shows through show_notice() while it waits for an approval; needs no answer.
+    notice: Optional[str] = None
+
     # Subtitles skipped under skip_subtitle_errors (non-fatal). Each entry is a dl.SkippedSubtitle
     # dict (id / language / title) so a client can report which weren't available.
     skipped_subtitles: List[Dict[str, Any]] = field(default_factory=list)
@@ -156,6 +161,8 @@ class DownloadJob:
             "segments_total": self.segments_total,
             "speed": self.speed,
             "skipped_subtitles": self.skipped_subtitles,
+            "input_prompt": self.input_prompt,
+            "notice": self.notice,
         }
 
         if include_full_details:
@@ -392,6 +399,9 @@ def perform_download(
     else:
         params["vcodec"] = []
 
+    if params.get("acodec"):
+        params["acodec"] = AUDIO_CODEC_LIST.convert(params["acodec"])
+
     range_raw = params.get("range")
     if range_raw:
         if isinstance(range_raw, str):
@@ -407,6 +417,15 @@ def perform_download(
 
     if params.get("export"):
         params["export"] = bool(params["export"])
+
+    sample_raw = params.get("sample")
+    if sample_raw is not None:
+        from unshackle.core.utils.click_types import SAMPLE_RANGE
+
+        try:
+            params["sample"] = SAMPLE_RANGE.convert(sample_raw, None, None)
+        except click.BadParameter as exc:
+            raise Exception(f"Invalid sample parameter: {exc}")
 
     slow_raw = params.get("slow")
     if slow_raw is not None and not isinstance(slow_raw, tuple):
@@ -457,6 +476,7 @@ def perform_download(
         "proxy_download": params.get("proxy_download"),
         "profile": params.get("profile"),
         "cdm_name": params.get("cdm"),
+        "all_drm": params.get("all_drm", False),
         "repack": params.get("repack", False),
         "tag": params.get("tag"),
         "tmdb_id": params.get("tmdb_id"),
@@ -474,6 +494,13 @@ def perform_download(
         "vcodec": params.get("vcodec", []),
         "range_": params.get("range", [Video.Range.SDR]),
         "best_available": params.get("best_available", False),
+        # services read these here, not from dl.result(), to pick the manifests they fetch
+        "acodec": params.get("acodec") or [],
+        "lang": params.get("lang", ["orig"]),
+        "v_lang": params.get("v_lang", []),
+        "a_lang": params.get("a_lang", []),
+        "forced_subs": params.get("forced_subs", False),
+        "exact_lang": params.get("exact_lang", False),
     }
     # Hand-built context: record parameter sources so service dl overrides
     # apply to defaults but never clobber client-sent values.
@@ -567,7 +594,7 @@ def perform_download(
                 service=service_instance,
                 quality=params.get("quality", []),
                 vcodec=params.get("vcodec", []),
-                acodec=params.get("acodec"),
+                acodec=ctx.params["acodec"],
                 vbitrate=params.get("vbitrate"),
                 abitrate=params.get("abitrate"),
                 vbitrate_range=params.get("vbitrate_range"),
@@ -578,14 +605,16 @@ def perform_download(
                 select_titles=False,
                 wanted=params.get("wanted", []),
                 latest_episode=params.get("latest_episode", False),
-                lang=params.get("lang", ["orig"]),
-                v_lang=params.get("v_lang", []),
-                a_lang=params.get("a_lang", []),
+                latest_episodes=params.get("latest_episodes"),
+                lang=ctx.params["lang"],
+                v_lang=ctx.params["v_lang"],
+                a_lang=ctx.params["a_lang"],
                 s_lang=params.get("s_lang", ["all"]),
                 require_audio=params.get("require_audio", []),
                 require_video=params.get("require_video", []),
                 require_subs=params.get("require_subs", []),
-                forced_subs=params.get("forced_subs", False),
+                forced_subs=ctx.params["forced_subs"],
+                forced_subs_only=params.get("forced_subs_only", False),
                 forced_s_lang=params.get("forced_s_lang", []),
                 exact_lang=params.get("exact_lang", False),
                 sub_format=params.get("sub_format"),
@@ -600,10 +629,12 @@ def perform_download(
                 no_video=params.get("no_video", False),
                 no_attachments=params.get("no_attachments", False),
                 audio_description=params.get("audio_description", False),
+                audio_description_only=params.get("audio_description_only", False),
                 slow=params.get("slow", None),
                 list_=False,
                 list_titles=False,
                 skip_dl=params.get("skip_dl", False),
+                all_drm=params.get("all_drm", False),
                 export=params.get("export"),
                 cdm_only=params.get("cdm_only"),
                 no_proxy=params.get("no_proxy", False),
@@ -612,6 +643,8 @@ def perform_download(
                 no_folder=params.get("no_folder", False),
                 no_source=params.get("no_source", False),
                 no_mux=params.get("no_mux", False),
+                sample=params.get("sample"),
+                include_sample=params.get("include_sample", False),
                 workers=params.get("workers"),
                 adaptive_workers=params.get("adaptive_workers", False),
                 download_processes=params.get("download_processes", 1),
@@ -747,21 +780,7 @@ class DownloadQueueManager:
 
     def schedule_pending_reload(self) -> None:
         """Swap in staged service updates whose last job has finished, off the event loop."""
-        from unshackle.core import services
-
-        if not services.PENDING:
-            return
-
-        async def run() -> None:
-            try:
-                applied = await asyncio.to_thread(services.apply_pending, busy_services())
-                if applied:
-                    log.info(f"Services reloaded after job completion: {', '.join(applied)}")
-                    publish_service_event("applied", applied)
-            except Exception:
-                log.exception("Applying pending service reloads failed")
-
-        asyncio.get_running_loop().create_task(run())
+        schedule_pending_reload()
 
     @staticmethod
     def put(queue: asyncio.Queue, item: Optional[Dict[str, Any]]) -> None:
@@ -809,6 +828,17 @@ class DownloadQueueManager:
             return True
 
         return False
+
+    def submit_input(self, job: DownloadJob, response: str) -> bool:
+        """Send *response* to the job's worker when it waits on a prompt; ``False`` when no prompt is pending."""
+        process = self._download_processes.get(job.job_id)
+        if not job.input_prompt or process is None or process.stdin is None:
+            return False
+        process.stdin.write((json.dumps(response) + "\n").encode("utf-8"))
+        # Cleared here, not on the worker's next progress write, so a second submit cannot queue a stale answer.
+        job.input_prompt = None
+        self.publish(job, "progress")
+        return True
 
     def remove_job(self, job_id: str) -> bool:
         """Remove a terminal (completed/failed/cancelled) job entirely."""
@@ -994,14 +1024,13 @@ class DownloadQueueManager:
 
             job.status = JobStatus.FAILED
             job.error_message = str(e)
-            job.error_details = str(e)
 
             api_error = categorize_exception(
                 e, context={"service": job.service, "title_id": job.title_id, "job_id": job.job_id}
             )
-            job.error_code = api_error.error_code.value
-
-            job.error_traceback = traceback.format_exc()
+            job.error_details = job.error_details or str(e)
+            job.error_code = job.error_code or api_error.error_code.value
+            job.error_traceback = job.error_traceback or traceback.format_exc()
 
             log.error(f"Download failed for job {job.job_id}: {e}")
             raise
@@ -1033,6 +1062,7 @@ class DownloadQueueManager:
             payload_path,
             result_path,
             progress_path,
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -1040,7 +1070,13 @@ class DownloadQueueManager:
         self._download_processes[job.job_id] = process
         self._job_temp_files[job.job_id] = {"payload": payload_path, "result": result_path, "progress": progress_path}
 
-        communicate_task = asyncio.create_task(process.communicate())
+        async def drain() -> tuple[bytes, bytes]:
+            """Collect the worker's output; unlike communicate(), leave stdin open for prompt answers."""
+            assert process.stdout is not None and process.stderr is not None
+            out, err, _ = await asyncio.gather(process.stdout.read(), process.stderr.read(), process.wait())
+            return out, err
+
+        communicate_task = asyncio.create_task(drain())
 
         stdout_bytes = b""
         stderr_bytes = b""
@@ -1061,6 +1097,7 @@ class DownloadQueueManager:
                     if stat_key != last_progress_stat:
                         with open(progress_path, "r", encoding="utf-8") as handle:
                             progress_data = json.load(handle)
+                            prompt_before = job.input_prompt
                             if progress_data.get("phase") and progress_data["phase"] != job.phase:
                                 job.phase = progress_data["phase"]
                             if progress_data.get("current_title"):
@@ -1085,6 +1122,10 @@ class DownloadQueueManager:
                                         pass
                             if progress_data.get("speed"):
                                 job.speed = str(progress_data["speed"])
+                            if "input_prompt" in progress_data:
+                                job.input_prompt = progress_data["input_prompt"]
+                            if "notice" in progress_data:
+                                job.notice = progress_data["notice"]
                             if progress_data.get("skipped_subtitles"):
                                 job.skipped_subtitles = progress_data["skipped_subtitles"]
                             if "progress" in progress_data:
@@ -1092,7 +1133,9 @@ class DownloadQueueManager:
                                 if new_progress != job.progress:
                                     job.progress = new_progress
                                     log.info(f"Job {job.job_id} progress updated: {job.progress}%")
-                            if progress_data != last_published:
+                            # submit_input() clears the prompt out of band, so a re-prompt with the same text
+                            # leaves the file equal to last_published; publish the prompt change anyway.
+                            if progress_data != last_published or job.input_prompt != prompt_before:
                                 last_published = progress_data
                                 self.publish(job, "progress")
                         last_progress_stat = stat_key
@@ -1142,6 +1185,9 @@ class DownloadQueueManager:
                     log.error(f"Failed to parse worker result for job {job.job_id}: {exc}")
                 break
 
+            if result_data:
+                job.error_traceback = result_data.get("traceback")
+
             if returncode != 0:
                 message = result_data.get("message") if result_data else "unknown error"
                 if result_data:
@@ -1165,6 +1211,8 @@ class DownloadQueueManager:
                     await communicate_task
 
             self._download_processes.pop(job.job_id, None)
+            job.input_prompt = None
+            job.notice = None
 
             temp_paths = self._job_temp_files.pop(job.job_id, {})
             for path in temp_paths.values():
@@ -1210,3 +1258,41 @@ def busy_services() -> set[str]:
     if stats.mode != "remote_only":
         busy |= get_download_manager().busy_services()
     return busy
+
+
+_reload_task: Optional[asyncio.Task[None]] = None
+
+
+def schedule_pending_reload(tag: Optional[str] = None) -> None:
+    """Swap in staged service updates whose last job or remote session has ended, off the event loop.
+
+    Runs on every job completion and remote session removal, because a busy service on a popular
+    tag can otherwise stay staged across every periodic refresh tick. With ``tag``, the reload only
+    runs when ``PENDING`` holds that tag.
+    """
+    global _reload_task
+    from unshackle.core import services
+
+    if not services.PENDING or (tag is not None and tag not in services.PENDING):
+        return
+    # apply_pending computes its ready set before it takes RELOAD_LOCK, so concurrent
+    # session ends would each re-import the same tag; one in-flight task covers them all.
+    if _reload_task is not None and not _reload_task.done():
+        return
+
+    async def run() -> None:
+        try:
+            applied = await asyncio.to_thread(services.apply_pending, busy_services())
+            if applied:
+                log.info(f"Services reloaded after their jobs and sessions ended: {', '.join(applied)}")
+                publish_service_event("applied", applied)
+        except Exception:
+            log.exception("Applying pending service reloads failed")
+
+    _reload_task = asyncio.get_running_loop().create_task(run())
+
+    def clear(_: asyncio.Task[None]) -> None:
+        global _reload_task
+        _reload_task = None
+
+    _reload_task.add_done_callback(clear)

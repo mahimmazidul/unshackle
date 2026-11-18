@@ -4,6 +4,8 @@ site_url: https://docs.unshackle.dev/
 repo_url: https://github.com/mahimmazidul/unshackle
 repo_name: mahimmazidul/unshackle
 docs_dir: docs
+extra_css:
+  - assets/extra.css
 
 exclude_docs: |
   reference/configuration.md

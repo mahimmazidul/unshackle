@@ -83,12 +83,21 @@ auth tokens in localStorage rather than in HTTP cookies need. Extraction is read
 Definitions of remote unshackle service servers, used by the `--remote` mode. Each entry is
 named by you (pick it with `--server`, or do not write that flag when you configure only one) and gives
 the server's `url` (required), an optional `api_key`, an optional `auth_headers` list, an
-optional `server_cdm` boolean, and an optional `services` sub-dict of per-service local
+optional `server_cdm` boolean, an optional `timeout` in seconds, and an optional `services` sub-dict of per-service local
 overrides such as `title_map`.
 
 Leave `server_cdm` unset and the client follows the server: it uses the server CDM for each
 service the API key has it on, and the local CDM for the others. `true` asks for the server CDM
 and falls back to the local CDM when the server refuses; `false` always uses the local CDM.
+`dl --cdm <name>` on a remote run has the same effect as `false` for that run: the device you
+name licenses the remote session. A [`cdm`](drm.md#cdm) entry for the service has the same
+effect for that service when it names the device that unshackle loaded. Both take priority over
+`server_cdm: true`. Remove the entry to use the server CDM for that service. The `default`
+entry does not count.
+
+The server has the last word. When it keeps the server CDM for a remote session that your
+device was to license, unshackle shows a warning. This occurs with a server that does not read
+your choice, and with a service option that runs the remote session on the server's device.
 
 `auth_headers` lists extra header names to send the API key in, tried before the defaults
 `X-Secret-Key` and `X-Api-Key`, which unshackle always appends as fallbacks. It sends the
@@ -96,6 +105,12 @@ first name. If the server answers `401`, it retries the same request with the ne
 keeps the one that works for the rest of the HTTP session. Names you give keep your spelling and
 are not repeated in the fallbacks, so unshackle tries
 `auth_headers: ["Authorization", "x-secret-key"]` as `Authorization`, `x-secret-key`, `X-Api-Key`.
+
+`timeout` is the time in seconds that the client waits for data from the server. The
+default is `120`. The server sends a heartbeat every 30 seconds while it gets titles, tracks
+or licences, so a slow service does not cause a timeout. Increase `timeout` only when the
+server runs an older version that sends no heartbeat. Give a number of seconds. With a
+value below 30 the client can time out before the first heartbeat. `0` means the default.
 
 In `--remote` mode unshackle turns the server's service list into synthetic CLI
 commands that operate against it, falling back to the tags in that `services` sub-dict when
@@ -125,7 +140,8 @@ is the [REST API](../../dev/rest-api/index.md) section. These are the config key
 | `max_sessions` | int or null | `100` | Maximum concurrent remote sessions; at the cap the server evicts the oldest. Set it to `null` or `0` for no limit, which is also what `/api/dashboard/status` then reports, so a dashboard can tell "no cap" from a cap that happens to sit at the default. |
 | `history_limit` | int | `100` | How many finished jobs to retain in history. |
 | `compression_level` | int | `1` | gzip level for responses. |
-| `services_refresh_interval` | int (s) | `0` | How often the server pulls the git-backed service repositories in `directories.services` and hot-reloads the services that changed. `0` turns it off. A service with a running or queued job, or a live remote session, swaps to the new code as soon as its last job and session finish. |
+| `services_refresh_interval` | int (s) | `0` | How often the server pulls the git-backed service repositories in `directories.services` and hot-reloads the services that changed. `0` turns it off. A service with a running or queued job, or a live remote session, is staged and swaps to the new code as soon as its last job and session finish. |
+| `services_staged_max_age` | int (s) | `0` | How long a staged service waits for its jobs and sessions before the server swaps it in anyway. `0` waits forever. Set it on a server whose popular services never have a quiet moment. A session that is live at the swap keeps the old code until it ends; a running job keeps its old code too. |
 | `global_speed_limit` | str | *(unlimited)* | Server-wide download speed cap, e.g. `10M`, `1.5G` or plain bytes/sec (same format as `speed_limit`). One shared budget across all concurrent jobs; the server ignores per-job speed limits while it is set. |
 | `cdm_overrides` | list or bool | *(unset)* | Allowed per-request CDM overrides: a list of permitted device names, or `true` for any. Unset rejects every override. |
 | `allow_job_credentials` | bool | `false` | Permit clients to supply credentials per job. |
@@ -139,6 +155,16 @@ Each entry under `users` uses that user's API key as its name, and can set its o
 A user with no `playready_devices` config key gets no PlayReady access at all, not the global
 list.
 
+!!! info "Reload `serve` settings without a restart"
+    Send `SIGHUP` to a running server (`systemctl reload` with
+    `ExecReload=kill -HUP $MAINPID` in the unit) after you edit the file. The server reads
+    the whole file again, globs the device directories again, and swaps in the new `users`,
+    `tiers`, `services` and device lists in one step. Open CDM sessions and remote sessions
+    continue; an API key you removed gets `401` on its next request. A file that does not parse
+    or validate keeps the running settings and logs the reason. A change to `remote_only`,
+    `services_refresh_interval`, the first PlayReady device, or any command-line flag needs
+    a restart, and the log says so. Windows has no `SIGHUP`: restart the server there.
+
 `server_cdm` decides whether the server runs the CDM licensing for that API key. Set it to
 `true` to enable every service, or to a list of service tags to enable only those. It is `false`
 unless the entry sets it. For a service the API key does not cover, the server tells a remote
@@ -146,6 +172,46 @@ client configured with `server_cdm: true` to license with its own local CDM inst
 client that asks anyway gets a `FORBIDDEN` error. Because a download job always licenses with the server's CDM,
 an API key without `server_cdm` for that service also cannot submit or retry `/api/download`
 jobs. Keys that have no `users` entry, such as `api_secret`, keep server CDM access.
+
+A remote client that picks its own device licenses the remote session with that device. It picks
+with `dl --cdm`, with a `cdm` entry for the service, or with `server_cdm: false` in its
+`remote_services` entry. The server CDM makes no licence for that remote session, with or without
+a limit. A service option that runs the remote session on the server's device, such as a
+server-identity flag, keeps the server CDM.
+
+`server_cdm_max_height` limits the live licences the server's device makes for that API key.
+Set it to a height in pixels for every service, or to a map of service tag to height with an
+optional `default` entry. A service the map does not name or sets to `null` gets the `default`, and
+with no `default` it has no limit. The server compares the limit with the lowest `-q` that selects
+the track: the track height, or the 16:9 height from the width when that is lower. The server reads
+the remote client's `-q` when the remote session starts:
+
+- With no `-q`, or a `-q` at or below the limit, the server CDM licenses the remote session. The server
+  refuses a live licence for a video track taller than the limit, and the client licenses that
+  track with its own local CDM.
+- With a `-q` above the limit, the client's own local CDM licenses every track of the remote session.
+  The service sees the DRM system and security level of the client's device. A client with no
+  local CDM gets a `SERVER_CDM_CAPPED` error.
+- A download job must pass a `quality` at or below the limit, and must not set `best_available` or
+  a `HYBRID` range. `HYBRID` always keeps the lowest Dolby Vision track, at any quality. A job with
+  no `quality`, with a higher one, with `best_available`, or with `HYBRID` gets a `SERVER_CDM_CAPPED`
+  error. The server checks the values the job runs with, after it applies the service defaults
+  and the `serve:` download defaults.
+
+The limit protects the server's device, not the content keys. For a Widevine track, a server vault
+still supplies a content key at every height. A PlayReady track never reads the vault, so above
+the limit it always goes to the client's device. A licence for a lower track can carry the
+content key of a higher track when the service shares one content key between them. With server
+accounts enabled, a client that reports a stronger device than it holds makes the server's
+account request those manifests; the licence server still refuses its challenge.
+
+`server_vault` lets a remote session that the client's own device licenses take content keys
+from the server vault. Set it to `true` for every service, or to a list of service tags. It is
+`false` unless the entry sets it, and `server_cdm` for a service implies it. The server looks up
+every KID of the track in its vault and makes no live licence. A track that the vault does not
+hold goes back to the client's device. When the service runs the remote session on the server's
+own device (a service option, such as a server-identity flag), the client's own vaults, and the
+server vault with this grant, are the only source, and a missing content key stops the download.
 
 `admin` is a boolean that lets the API key run the maintenance endpoints (clear-cache, clear-temp, refresh-services). It is `false` unless the entry sets it. Keys that have no `users` entry, such as `api_secret`, keep that access.
 
@@ -235,11 +301,15 @@ serve:
       tier: bot                   # 600 requests/hour; 429 with Retry-After once over
     e5f6a7b8:
       server_cdm: true            # this key may have the server do the licensing
+      server_cdm_max_height: 1080 # above 1080p the client licenses with its own device
     c9d0e1f2:
       services: [EXAMPLE1, EXAMPLE2]
       server_cdm: [EXAMPLE1]      # the server licenses only EXAMPLE1; EXAMPLE2 needs a local CDM
       server_accounts: [EXAMPLE1] # may authenticate EXAMPLE1 with one of the server's own accounts
       server_proxy: true          # this key may also use the server's proxy providers
+    f3a4b5c6:
+      services: [EXAMPLE1]
+      server_vault: [EXAMPLE1]    # the client's device licenses; the server vault still serves keys
 ```
 
 !!! note "`dl` keys inside `serve`"

@@ -26,6 +26,8 @@ def make_ctx(args: Optional[list[str]] = None, default_map: Optional[dict[str, A
     )
     @click.option("--repack", is_flag=True, default=False)
     @click.option("--workers", type=int, default=None, envvar="TEST_DL_WORKERS")
+    @click.option("--download-processes", type=int, default=1)
+    @click.option("--downloads", type=int, default=1)
     def cmd(**__: Any) -> None:
         pass
 

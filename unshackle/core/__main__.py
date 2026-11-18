@@ -22,7 +22,39 @@ from unshackle.core.update_checker import UpdateChecker
 from unshackle.core.utilities import close_debug_logger, init_debug_logger
 
 
-@click.command(cls=Commands, invoke_without_command=True, context_settings=context_settings)
+def print_banner() -> None:
+    """Print the ASCII banner with the version line."""
+    console.print(
+        Padding(
+            Group(
+                Text(
+                    r"▄• ▄▌ ▐ ▄ .▄▄ ·  ▄ .▄ ▄▄▄·  ▄▄· ▄ •▄ ▄▄▌  ▄▄▄ ." + "\n"
+                    r"█▪██▌•█▌▐█▐█ ▀. ██▪▐█▐█ ▀█ ▐█ ▌▪█▌▄▌▪██•  ▀▄.▀·" + "\n"
+                    r"█▌▐█▌▐█▐▐▌▄▀▀▀█▄██▀▐█▄█▀▀█ ██ ▄▄▐▀▀▄·██▪  ▐▀▀▪▄" + "\n"
+                    r"▐█▄█▌██▐█▌▐█▄▪▐███▌▐▀▐█ ▪▐▌▐███▌▐█.█▌▐█▌▐▌▐█▄▄▌" + "\n"
+                    r" ▀▀▀ ▀▀ █▪ ▀▀▀▀ ▀▀▀ · ▀  ▀ ·▀▀▀ ·▀  ▀.▀▀▀  ▀▀▀ ",
+                    style="ascii.art",
+                ),
+                Text("Modified for rootless servers by Paw", style="italic dim", justify="center"),
+                f"v [repr.number]{__version__}[/]{f' ({__code_hash__})' if __code_hash__ else ''}"
+                f" - © 2025-{datetime.now().year} - github.com/mahimmazidul/unshackle",
+            ),
+            (1, 11, 1, 10),
+            expand=True,
+        ),
+        justify="center",
+    )
+
+
+class Main(Commands):
+    """The top-level group. Its help shows the banner, because its callback does not run for --help."""
+
+    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        print_banner()
+        super().format_help(ctx, formatter)
+
+
+@click.command(cls=Main, invoke_without_command=True, context_settings=context_settings)
 @click.option("-v", "--version", is_flag=True, default=False, help="Print version information.")
 @click.option("-d", "--debug", is_flag=True, default=False, help="Enable DEBUG level logs and JSON debug logging.")
 def main(version: bool, debug: bool) -> None:
@@ -67,26 +99,7 @@ def main(version: bool, debug: bool) -> None:
             rootless_check()
             return
 
-    console.print(
-        Padding(
-            Group(
-                Text(
-                    r"▄• ▄▌ ▐ ▄ .▄▄ ·  ▄ .▄ ▄▄▄·  ▄▄· ▄ •▄ ▄▄▌  ▄▄▄ ." + "\n"
-                    r"█▪██▌•█▌▐█▐█ ▀. ██▪▐█▐█ ▀█ ▐█ ▌▪█▌▄▌▪██•  ▀▄.▀·" + "\n"
-                    r"█▌▐█▌▐█▐▐▌▄▀▀▀█▄██▀▐█▄█▀▀█ ██ ▄▄▐▀▀▄·██▪  ▐▀▀▪▄" + "\n"
-                    r"▐█▄█▌██▐█▌▐█▄▪▐███▌▐▀▐█ ▪▐▌▐███▌▐█.█▌▐█▌▐▌▐█▄▄▌" + "\n"
-                    r" ▀▀▀ ▀▀ █▪ ▀▀▀▀ ▀▀▀ · ▀  ▀ ·▀▀▀ ·▀  ▀.▀▀▀  ▀▀▀ ",
-                    style="ascii.art",
-                ),
-                Text("Modified for rootless servers by Paw", style="italic dim", justify="center"),
-                f"v [repr.number]{__version__}[/]{f' ({__code_hash__})' if __code_hash__ else ''}"
-                f" - © 2025-{datetime.now().year} - github.com/mahimmazidul/unshackle",
-            ),
-            (1, 11, 1, 10),
-            expand=True,
-        ),
-        justify="center",
-    )
+    print_banner()
 
     # Detect the environment (root vs rootless), create the writable directories, and
     # redirect tempfile work off the shared /tmp. Never raises. Runs after the banner so

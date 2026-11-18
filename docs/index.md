@@ -41,30 +41,51 @@ at a title and it will:
 | Audio | AAC, AC-3, E-AC-3, AC-4, Opus, Vorbis, DTS, DTS-X, ALAC, FLAC; Dolby Atmos handling; per-channel-layout selection |
 | Subtitles | SRT, WebVTT, ASS/SSA, TTML and more, with optional SDH stripping and format conversion |
 | Key vaults | SQLite, MySQL, and HTTP/API vaults to store and share content keys |
-| Proxies | Basic proxies plus NordVPN, ProtonVPN, Surfshark, Windscribe, ExpressVPN, Gluetun, and Hola providers |
+| Proxies | Basic proxies plus Control D, NordVPN, ProtonVPN, Surfshark, Windscribe, ExpressVPN, Gluetun, and Hola providers |
 | Services | A plugin API for the service modules you write. unshackle includes none |
 | Automation | A REST API with a job queue, live progress, history, and remote-download sessions |
 
 ## Installation at a glance
 
-=== "Install as a tool"
+A git clone with the install script is the recommended way to install unshackle.
 
-    ```shell
-    uv tool install git+https://github.com/mahimmazidul/unshackle.git
-    unshackle --help
-    ```
-
-=== "Run from a clone"
+=== "Linux (recommended)"
 
     ```shell
     git clone https://github.com/mahimmazidul/unshackle.git
     cd unshackle
-    uv run unshackle --help
+    sh install.sh
+    uv run unshackle env check
     ```
+
+=== "Windows (recommended)"
+
+    ```bat
+    git clone https://github.com/mahimmazidul/unshackle.git
+    cd unshackle
+    .\install.bat
+    uv run unshackle env check
+    ```
+
+=== "Advanced: uv tool"
+
+    ```shell
+    uv tool install git+https://github.com/mahimmazidul/unshackle.git
+    unshackle setup
+    ```
+
+    This installs unshackle into the tool folder of `uv`, not a folder that you
+    choose. `unshackle setup` then puts the tools, config, and data in your user
+    data and config directories.
+
+The install script installs `uv` and unshackle, then runs `unshackle setup`. In a
+clone, run every command as `uv run unshackle ...`. The examples on this site use
+the bare `unshackle` command.
 
 !!! note "External tools"
     unshackle shells out to FFmpeg, MKVToolNix, shaka-packager, Bento4, and
-    `dovi_tool` for decryption, repacking, muxing, and Dolby Vision work. See
+    `dovi_tool` for decryption, repacking, muxing, and Dolby Vision work.
+    `unshackle setup` downloads them when a portable build exists for your system. See
     [Installation](getting-started/installation.md) for the full list and recommended versions.
 
 ## A first download

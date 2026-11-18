@@ -100,6 +100,7 @@ Declared at class level to configure framework behaviour:
 | `GEOBLOCK` | `tuple[str, ...]` | IP region codes where the service refuses to work. Every other region is allowed. Default `()`. |
 | `VAULT_TAG` | `Optional[str]` | Overrides the key-vault namespace so sibling services can share one vault. Default `None` (use the service's own tag). |
 | `AUTH_METHODS` | `Optional[tuple[str, ...]]` | Auth methods accepted (`"cookies"` / `"credentials"`). When `None`, the REST `/services` endpoint infers them from `authenticate()`. |
+| `ANONYMOUS_SEARCH` | `bool` | Set `True` when `search()` needs no login and no state from `authenticate()`. A search then skips the cookie load, `authenticate()` and the cookie save. Default `False`. |
 | `NO_SUBTITLES` | `bool` | Set `True` on a service with no subtitle tracks to skip subtitle handling entirely. |
 | `ANIME` | `bool` | Set `True` when the catalogue is anime, so metadata lookups prefer AniList. A title's own `anime` flag overrides it. |
 | `DAILY` | `bool` | Set `True` when the catalogue is daily/date-based (talk shows, news, sports), so unshackle names episodes by air date. A title's own `daily` flag overrides it. |
@@ -251,9 +252,32 @@ Cookies come from files under `directories.cookies`. Credentials come from the
 use `self.request_input(prompt)`, never a bare `input()`. Under `serve` mode
 there is no local terminal, so a bare `input()` would hang the server waiting on
 stdin that never arrives. `request_input` instead relays the prompt to the
-remote client through the attached `InputBridge`. Locally it routes through the
+client: a remote-dl session gets it through the attached `InputBridge`, and a
+REST download job shows it as `input_prompt`. Locally it routes through the
 shared Rich console (`prompt_user`) so the prompt renders correctly alongside
 progress and log output.
+
+For a login that the user approves on another device (a pair code, a QR code),
+use `self.wait_for_approval(message, check, timeout)`, never a hand-written
+loop. It shows the message, then calls `check` at each interval until `check`
+returns a value. `check` returns `None` while the approval is pending.
+
+```python
+token = self.wait_for_approval(
+    f"Open {self.config['endpoints']['pair']} and enter code {code}",
+    check=lambda: self.poll_pair_token(code),
+    timeout=expires_in,
+)
+```
+
+It raises `TimeoutError` after `timeout` seconds. Under `serve` mode it also stops
+when the client deletes the remote session, so the loop does not continue on the
+server with no client. The message goes out as a log line, so a remote
+session shows it. A REST download job shows it in its `notice` field until the wait ends.
+
+The wait sees a cancel only between two `check` calls, so `check` must return within a few
+seconds. A `check` that reads a socket keeps the socket open across calls and returns `None`
+after each short idle wait.
 
 !!! warning "Make each token cache entry unique"
     The cache above uses `tokens_{device}_{profile}` on purpose. A token cache
@@ -585,6 +609,12 @@ Override any of these to react to pipeline stages (all no-ops by default):
 `on_segment_downloaded`, `on_track_downloaded`, `on_track_decrypted`,
 `on_track_repacked`, `on_track_multiplex`. Also override `search()` to yield
 `SearchResult` objects for `unshackle search`.
+
+!!! warning "Set `ANONYMOUS_SEARCH` only for a search that needs no account"
+    With `ANONYMOUS_SEARCH = True`, `search()` operates on an HTTP session with no cookies, and
+    `authenticate()` does not run. Set it only when the search results do not depend on the
+    account, and when `search()` does its own setup. A `search()` that reads a token, a header
+    or a region from `authenticate()` fails or gives results for the wrong region.
 
 ```python
 def search(self) -> Generator[SearchResult, None, None]:

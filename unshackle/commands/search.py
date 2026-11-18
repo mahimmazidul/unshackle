@@ -15,7 +15,8 @@ from unshackle.core.config import config
 from unshackle.core.console import console
 from unshackle.core.constants import context_settings
 from unshackle.core.proxies import Basic
-from unshackle.core.proxies.resolve import initialize_proxy_providers, provider_matches
+from unshackle.core.proxies.proxy import Proxy
+from unshackle.core.proxies.resolve import REGION, describe_proxy, load_proxy_providers, pick_proxy, split_proxy_query
 from unshackle.core.service import Service
 from unshackle.core.service_config import check_service_config_keys
 from unshackle.core.services import Services, load_service_config
@@ -64,62 +65,32 @@ def search(ctx: click.Context, no_proxy: bool, profile: Optional[str] = None, pr
             log.warning(f"No service config at {expected}")
         check_service_config_keys(service, service_config, service_config_path)
 
-    proxy_providers = []
+    proxy_providers: list[Proxy] = []
     if no_proxy:
         ctx.params["proxy"] = None
     else:
         with console.status("Loading Proxy Providers...", spinner="dots"):
-            proxy_providers = initialize_proxy_providers(quiet=True)
+            proxy_providers = load_proxy_providers(quiet=True)
+            # The fork's baseline: the provider inventory is logged once, after the quiet load.
             for proxy_provider in proxy_providers:
                 log.info(f"Loaded {proxy_provider.__class__.__name__}: {proxy_provider}")
 
         if proxy:
-            requested_provider = None
-            if re.match(r"^[a-z]+:.+$", proxy, re.IGNORECASE):
-                requested_provider, proxy = proxy.split(":", maxsplit=1)
-            if re.match(r"^[a-z]{2}(?:[-][a-z0-9]+)*(?:\d+)?$", proxy, re.IGNORECASE) or re.match(
-                r"^[a-z]+:[a-z]{2}(?:[-][a-z0-9]+)*(?:\d+)?$", proxy, re.IGNORECASE
-            ):
-                proxy = proxy.lower()
-                with console.status(f"Getting a Proxy to {proxy}...", spinner="dots"):
-                    if requested_provider:
-                        proxy_provider = next(
-                            (x for x in proxy_providers if provider_matches(x, requested_provider)), None
-                        )
-                        if not proxy_provider:
-                            log.error(f"The proxy provider '{requested_provider}' was not recognised.")
-                            sys.exit(1)
-                        proxy_uri = proxy_provider.get_proxy(proxy)
-                        if not proxy_uri:
-                            log.error(f"The proxy provider {requested_provider} had no proxy for {proxy}")
-                            sys.exit(1)
-                        proxy = ctx.params["proxy"] = proxy_uri
-                        display = None
-                        if hasattr(proxy_provider, "last_connection_display"):
-                            display = proxy_provider.last_connection_display()
-                        if display:
-                            log.info(f"Using {proxy_provider.__class__.__name__} Proxy {display}")
-                        else:
-                            log.info(
-                                f"Using {proxy_provider.__class__.__name__} Proxy: "
-                                f"{mask_proxy(proxy, isinstance(proxy_provider, Basic))}"
-                            )
-                    else:
-                        for proxy_provider in proxy_providers:
-                            proxy_uri = proxy_provider.get_proxy(proxy)
-                            if proxy_uri:
-                                proxy = ctx.params["proxy"] = proxy_uri
-                                display = None
-                                if hasattr(proxy_provider, "last_connection_display"):
-                                    display = proxy_provider.last_connection_display()
-                                if display:
-                                    log.info(f"Using {proxy_provider.__class__.__name__} Proxy {display}")
-                                else:
-                                    log.info(
-                                        f"Using {proxy_provider.__class__.__name__} Proxy: "
-                                        f"{mask_proxy(proxy, isinstance(proxy_provider, Basic))}"
-                                    )
-                                break
+            try:
+                requested_provider, query = split_proxy_query(proxy, proxy_providers)
+            except ValueError as e:
+                log.error(str(e))
+                sys.exit(1)
+            if re.fullmatch(rf"(?:[a-z]+:)?{REGION}", query, re.IGNORECASE):
+                query = query.lower()
+                with console.status(f"Getting a Proxy to {query}...", spinner="dots"):
+                    try:
+                        proxy_provider, proxy_uri = pick_proxy(proxy_providers, query, requested_provider)
+                    except ValueError as e:
+                        log.error(str(e))
+                        sys.exit(1)
+                    ctx.params["proxy"] = proxy_uri
+                    log.info(describe_proxy(proxy_provider, proxy_uri, query))
             else:
                 log.info(f"Using explicit Proxy: {mask_proxy(ctx.params['proxy'])}")
 
@@ -132,12 +103,13 @@ def result(service: Service, profile: Optional[str] = None, **_: Any) -> None:
 
     service_tag = service.__class__.__name__
 
-    with console.status("Authenticating with Service...", spinner="dots"):
-        cookies = dl.get_cookie_jar(service_tag, profile)
-        credential = dl.get_credentials(service_tag, profile)
-        service.authenticate(cookies, credential)
-        if cookies or credential:
-            log.info("Authenticated with Service")
+    if not service.ANONYMOUS_SEARCH:
+        with console.status("Authenticating with Service...", spinner="dots"):
+            cookies = dl.get_cookie_jar(service_tag, profile)
+            credential = dl.get_credentials(service_tag, profile)
+            service.authenticate(cookies, credential)
+            if cookies or credential:
+                log.info("Authenticated with Service")
 
     search_results = Tree("Search Results", hide_root=True)
     with console.status("Searching...", spinner="dots"):
@@ -152,7 +124,7 @@ def result(service: Service, profile: Optional[str] = None, **_: Any) -> None:
             result_text += f"\n[bright_black]id: {result.id}[/]"
             search_results.add(result_text + "\n")
 
-    cookie_file = dl.get_cookie_path(service_tag, profile)
+    cookie_file = None if service.ANONYMOUS_SEARCH else dl.get_cookie_path(service_tag, profile)
     if cookie_file:
         dl.save_cookies(cookie_file, service.session.cookies)
 

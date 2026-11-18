@@ -166,6 +166,17 @@ def _resolve_user_path(path: Any, *, relative_to: Path) -> Path:
     return relative_to / value
 
 
+def cdm_entry_names_device(entry: Any, profile: Optional[str] = None) -> bool:
+    """Whether a per-service ``cdm`` entry names a device when no quality is known.
+
+    An entry that selects only by quality, or by a different profile, names none.
+    """
+    if not isinstance(entry, dict):
+        return bool(entry)
+    systems = {"widevine", "playready"} & {str(key).lower() for key in entry}
+    return bool(systems or entry.get(profile) or entry.get("default"))
+
+
 class Config:
     class _Directories:
         # Default directories. These are only fallbacks: any path a user sets in
@@ -320,6 +331,7 @@ class Config:
             self.decryption_map = {}
             self.decryption = decryption_cfg or "shaka"
         self.decrypt_segments: bool = bool(kwargs.get("decrypt_segments", False))
+        self.merge_segments: bool = bool(kwargs.get("merge_segments", False))
 
         self.theme: str = kwargs.get("theme") or "default"
         self.set_terminal_bg: bool = kwargs.get("set_terminal_bg", False)
@@ -347,6 +359,7 @@ class Config:
         # mask local base dirs (install root/venv/home) in logged paths; False shows full paths
         self.redact_paths: bool = kwargs.get("redact_paths", True)
         self.continue_downloads: bool = kwargs.get("continue_downloads", False)
+        self.sample: Optional[tuple[int, int]] = None
         self.post_scripts: list = kwargs.get("post_scripts") or []
         # Watcher targets may live in this file (watchers:) or in a dedicated YAML
         # whose path is watch.config / filenames.watchers.
@@ -585,6 +598,12 @@ def get_config_candidates() -> list[Path]:
 
 # Kept for env info / older imports. Prefer get_config_candidates() for discovery.
 POSSIBLE_CONFIG_PATHS = tuple(get_config_candidates())
+
+
+# The two canonical write targets of `unshackle setup` (package next to the code, or the user config dir).
+# noinspection PyProtectedMember
+PACKAGE_CONFIG_PATH = Config._Directories.namespace_dir / Config._Filenames.root_config
+USER_CONFIG_PATH = Path(Config._Directories.app_dirs.user_config_dir) / Config._Filenames.root_config
 
 
 def get_config_path() -> Optional[Path]:

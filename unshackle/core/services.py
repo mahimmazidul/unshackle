@@ -15,6 +15,7 @@ import click
 
 from unshackle.core import binaries
 from unshackle.core.config import config
+from unshackle.core.constants import DEFAULT_SAMPLE
 from unshackle.core.service import Service
 from unshackle.core.service_config import merge_service_overlay, parse_service_config_file
 from unshackle.core.service_repo import DirtyServiceRepo, head, is_repo_spec, refresh_repo, resolve_service_repo
@@ -309,13 +310,24 @@ def failed_tags(errors: Iterable[str]) -> set[str]:
     return {err.split(":", 1)[0] for err in errors if ":" in err}
 
 
+def staged_max_age() -> float:
+    """Seconds a staged tag may wait for its jobs and sessions before it swaps in anyway; 0 waits forever."""
+    return float((config.serve or {}).get("services_staged_max_age", 0) or 0)
+
+
 def apply_pending(busy: set[str] | None = None) -> list[str]:
     """Reload every staged tag whose service is no longer busy; returns the tags now running.
 
-    A tag whose re-import failed is not one of them: the old module keeps serving, so calling
-    it applied would tell the dashboard that code is live when it is not.
+    A tag staged for longer than ``serve.services_staged_max_age`` reloads even while busy:
+    its live sessions keep the old class objects they already hold, and a popular tag would
+    otherwise never see a quiet moment. A tag whose re-import failed is not counted as
+    running: the old module keeps serving, so calling it applied would tell the dashboard
+    that code is live when it is not.
     """
-    ready = sorted(PENDING - (busy or set()))
+    max_age = staged_max_age()
+    now = time.time()
+    overdue = {tag for tag, since in PENDING_SINCE.items() if max_age and now - since >= max_age}
+    ready = sorted((PENDING - (busy or set())) | (PENDING & overdue))
     if not ready:
         return []
     errors = reload_services(ready)
@@ -387,16 +399,17 @@ class Services(click.Group):
         super().format_help(ctx, formatter)
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
-        """Preprocess ``--slow`` so it can take an optional range value before Click parses the arguments."""
+        """Preprocess ``--slow`` and ``--sample`` so each can take an optional range value before Click parses."""
+        defaults = {"--slow": "60-120", "--sample": "{}-{}".format(*DEFAULT_SAMPLE)}
         processed = []
         i = 0
         while i < len(args):
-            if args[i] == "--slow":
+            if args[i] in defaults:
                 if i + 1 < len(args) and re.match(r"^\d+-\d+$", args[i + 1]):
-                    processed.append(f"--slow={args[i + 1]}")
+                    processed.append(f"{args[i]}={args[i + 1]}")
                     i += 2
                 else:
-                    processed.append("--slow=60-120")
+                    processed.append(f"{args[i]}={defaults[args[i]]}")
                     i += 1
             else:
                 processed.append(args[i])
@@ -479,7 +492,9 @@ class Services(click.Group):
 
             server_name = ctx.params.get("server")
             server_url, api_key, services_config = resolve_server(server_name)
-            client = RemoteClient(server_url, api_key, services_config.get("_auth_headers"))
+            client = RemoteClient(
+                server_url, api_key, services_config.get("_auth_headers"), services_config.get("_timeout")
+            )
             result = client.get("/api/services")
             Services.remote_services_cache = result.get("services", [])
             return Services.remote_services_cache
@@ -535,6 +550,7 @@ class Services(click.Group):
             server_name = ctx.parent.params.get("server") if ctx.parent else None
             server_url, api_key, services_config = resolve_server(server_name)
             services_config["_server_accounts"] = svc_info.get("server_accounts") if svc_info else None
+            services_config["_client_config"] = svc_info.get("client_config") if svc_info else None
             service_params = {k: v for k, v in kwargs.items() if v is not None and v is not False}
             return RemoteService(ctx, tag, title, server_url, api_key, services_config, service_params=service_params)
 

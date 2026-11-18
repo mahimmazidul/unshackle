@@ -15,7 +15,7 @@ Start the server with [`unshackle serve`](../../guide/cli-reference.md). By defa
 - **Authentication.** Every request except `GET /api/health` requires the `X-Secret-Key` header when you configure an API key. `--no-key` disables the check entirely. See [Authentication](authentication.md).
 - **Content type.** Request bodies are JSON (`Content-Type: application/json`). All success responses are JSON unless this page documents a `204 No Content`.
 - **CORS.** Every response carries permissive CORS headers, and the server answers `OPTIONS` preflight requests automatically.
-- **Compression.** JSON responses of 256 bytes or more are gzip-compressed when the client sends `Accept-Encoding: gzip`.
+- **Compression.** JSON responses of 256 bytes or more are gzip-compressed when the client sends `Accept-Encoding: gzip`. A [slow response](#slow-responses) is not compressed.
 - **Service allowlist.** The effective allowlist for your API key filters the service-facing endpoints (the intersection of the global `serve.services` list and your per-key list). The server treats services you cannot use as unknown.
 
 !!! warning "Error responses have two shapes"
@@ -98,6 +98,7 @@ Show the streaming services available on this server, filtered by your allowlist
           ],
           "needs_auth": true,
           "has_search": true,
+          "anonymous_search": false,
           "has_drm": true,
           "auth_methods": ["cookies"]
         }
@@ -120,6 +121,7 @@ Field notes:
 | `cli_params` | Array of parameter descriptors. Arguments have `{name, kind: "argument", required}`; options have `{name, kind: "option", opts, is_flag, default, help, type, multiple}` and, for choice options, a `choices` list. |
 | `needs_auth` | Whether the service overrides `authenticate()`. |
 | `has_search` | Whether the service supports `POST /api/search`. |
+| `anonymous_search` | Whether `POST /api/search` operates with no login for this service. The server then ignores `credentials` and `cookies` on a search. |
 | `has_drm` | Whether the service overrides a Widevine or PlayReady license hook. |
 | `pending_update` | Set to `true` while a service repository refresh waits for this service's jobs to finish before it swaps in the new code. Absent otherwise. |
 | `server_accounts` | Present when the server lends its own accounts for this service: `{regions: ["ca", "gb"], global: bool}`, the regions those accounts cover. A client sends no credentials, cookies, or cache for such a service. |
@@ -134,6 +136,8 @@ Field notes:
 
 Find titles in a service by query string. The service must have a `search()` method (see `has_search` above).
 
+For a service with `anonymous_search`, the server does not log in and ignores `credentials` and `cookies`. The server account check still applies.
+
 **Request body**
 
 | Field | Type | Required | Default | Description |
@@ -141,8 +145,9 @@ Find titles in a service by query string. The service must have a `search()` met
 | `service` | string | yes | - | Service tag. |
 | `query` | string | yes | - | Search query. |
 | `profile` | string | no | `null` | Credential/cookie profile to use. |
-| `proxy` | string | no | `null` | Full proxy URI, or a country code when the API key has `server_proxy`. |
+| `proxy` | string | no | `null` | Full proxy URI, a Control D resolver as `controld://<resolver>@dns.controld.com`, or a country code when the API key has `server_proxy`. |
 | `no_proxy` | boolean | no | `false` | Force-disable all proxy use. |
+| `credentials`, `cookies`, `cache` | - | no | `null` | Your own login material, on a `--remote-only` server only. See [Client cache on a remote-only server](#client-cache-on-a-remote-only-server). |
 
 === "Request"
 
@@ -189,11 +194,43 @@ Get the list of titles behind a title ID, for example episodes or a movie, witho
 | `service` | string | yes | Service tag. |
 | `title_id` | string | yes | Title identifier. |
 | `profile` | string | no | Credential/cookie profile. |
-| `proxy` | string | no | Full proxy URI, or a country code when the API key has `server_proxy`. |
+| `proxy` | string | no | Full proxy URI, a Control D resolver as `controld://<resolver>@dns.controld.com`, or a country code when the API key has `server_proxy`. |
 | `no_proxy` | boolean | no | Force-disable proxy. |
 | `cdm_type` | string | no | Preferred CDM type. |
+| `credentials`, `cookies`, `cache` | - | no | Your own login material, on a `--remote-only` server only. See [Client cache on a remote-only server](#client-cache-on-a-remote-only-server). |
 
 You can also pass service-specific CLI options as additional keys.
+
+#### Logins that need the user
+
+`search`, `list-titles` and `list-tracks` have no channel to the user. A login that asks for
+input or waits for an approval on another device fails at once with `AUTH_FAILED` on these
+endpoints. Complete that login in a download job or a remote session, then send the saved
+login with the request.
+
+#### Client cache on a remote-only server
+
+A `--remote-only` server keeps nothing that a client sends. When the request
+does not use a server account, the server runs `search`, `list-titles` and
+`list-tracks` on a new service cache directory for that request only, and
+removes the directory when the request ends, on success and on error. A
+`--remote-only` server exposes only `search` of these three endpoints, so the
+rule applies to `list-titles` and `list-tracks` only if a later release exposes
+them in that mode.
+
+`credentials` (`{username, password, extra?}`) and `cookies` (base64 of a
+zlib-compressed Netscape cookie file) are the same as on
+[`POST /api/session/create`](#post-apisessioncreate). `cache` is a map of cache
+files in the same form: each cache key is the file path relative to the service cache
+directory, with `/` separators and no `.json` suffix, and each value is base64
+of the zlib-compressed file. The server writes these files into the request
+cache directory before the service authenticates.
+
+When you send `credentials`, `cookies` or `cache`, a successful response also
+has a `cache` field in the same form, with the updated files (for example a
+refreshed token), but no `titles_` files. Save them to send with the next
+request. A request that uses a server account, or a request to a full-mode
+server, uses the server's own cache and returns no `cache` field.
 
 === "Request"
 
@@ -278,6 +315,8 @@ Show the video, audio, and subtitle tracks for a title. For series, you can scop
 | `episode` | int/string | no | Episode number (combined with `season`). |
 | `part` | int/string | no | Part index of a split episode (combined with `season` and `episode`). |
 | `profile`, `proxy`, `no_proxy`, `cdm_type` | - | no | As on `list-titles`. |
+| `credentials`, `cookies`, `cache` | - | no | As on `list-titles`. |
+| `dl_params` | object | no | The `dl` track selection that the service reads from `ctx.parent.params`: `lang`, `v_lang`, `a_lang`, `acodec`, `forced_subs` and `exact_lang`, as on [`POST /api/session/create`](#post-apisessioncreate). Some services select the manifests they fetch from these values. |
 
 When you give both `season` and `episode`, the server combines them into a `"{season}x{episode}"` selector. `part` narrows that to `"{season}x{episode}.{part}"`, one part of a [split episode](../creating-a-service.md#split-episodes). Without `part` you get every part of the episode. The server reads `part` only when you give both `season` and `episode`, and `wanted` takes precedence over all three. To scope a part by range, put it in `wanted` instead (`"S01E01.2"`).
 
@@ -401,30 +440,36 @@ Make a download job. It requires `service` and `title_id`. Every other field is 
 | `no_atmos` | boolean | `false` | Exclude Atmos tracks. |
 | `wanted` | string / string[] | `[]` | Episode/season selectors, as a list or as one comma-separated string. Accepts the part form, `"S01E01.2"`, and the air-date form, `"2026-08-11"` or `"2026-08-01:2026-08-31"`. For a music release, a selector is a track number, `"1-5"` or `"1,3,7"`, or `"{disc}x{track}"` such as `"2x3"`. |
 | `latest_episode` | boolean | `false` | Only the newest episode. |
+| `latest_episodes` | integer | `null` | Only the N newest episodes. A positive integer. When set, it overrides `latest_episode`. |
 | `lang` / `v_lang` / `a_lang` / `s_lang` | string[] | `["orig"]` / `[]` / `[]` / `["all"]` | Language filters. |
 | `require_audio` | string[] | `[]` | Audio languages that must exist. The job fails if one is missing, even with `best_available`. |
 | `require_video` | string[] | `[]` | Video languages that must exist. The job fails if one is missing, even with `best_available`. |
 | `require_subs` | string[] | `[]` | Subtitle languages that must exist. The job fails if one is missing. `s_lang` still decides what to keep. |
 | `forced_subs` | boolean | `false` | Include forced subtitles. |
+| `forced_subs_only` | boolean | `false` | Download forced subtitles and no other subtitle; implies `forced_subs`. Not valid with `no_subs`, `video_only`, `audio_only` or `chapters_only`. |
 | `forced_s_lang` | string[] | `[]` | Forced subtitle language(s); implies `forced_subs`. |
 | `exact_lang` | boolean | `false` | Exact language matching. |
 | `sub_format` | string | `null` | Output subtitle format. |
 | `video_only` / `audio_only` / `subs_only` / `chapters_only` | boolean | `false` | Track-type restriction (at most one). |
 | `no_subs` / `no_audio` / `no_chapters` / `no_video` / `no_attachments` | boolean | `false` | Skip a track type. |
 | `audio_description` | boolean | `false` | Download audio description. |
+| `audio_description_only` | boolean | `false` | Download audio description and no standard audio. Not valid with `no_audio`, `video_only`, `subs_only` or `chapters_only`. |
 | `slow` | boolean/string | `null` | Randomized delay between downloads. |
 | `split_audio` | boolean | `null` | Separate files per audio codec. |
 | `skip_dl` | boolean | `false` | Only fetch keys, do not download. |
+| `all_drm` | boolean | `false` | License each track with both Widevine and PlayReady. Needs a CDM for each DRM system. Key vaults are read first; `cdm_only: true` sends a challenge for each system. The server refuses it with `cdm`, which selects one device. |
 | `export` | boolean | `false` | Export manifest/keys/subs to JSON. |
 | `cdm_only` | boolean | `null` | Force CDM-only (`true`) or vault-only (`false`) key retrieval. |
-| `proxy` / `no_proxy` / `no_proxy_download` / `proxy_download` | string / bool / bool / string | `null` / `false` / `false` / `null` | Proxy controls. `proxy` and `proxy_download` must be full proxy URIs unless the API key has `server_proxy`. |
+| `proxy` / `no_proxy` / `no_proxy_download` / `proxy_download` | string / bool / bool / string | `null` / `false` / `false` / `null` | Proxy controls. `proxy` and `proxy_download` must be full proxy URIs unless the API key has `server_proxy`. A Control D resolver, `controld://<resolver>@dns.controld.com`, counts as a full proxy URI: the server runs a forwarder for it. |
 | `no_folder` / `no_source` / `no_mux` | boolean | `false` | Output/mux controls. |
+| `sample` | boolean/string | `null` | Download a short sample and write it with a `SAMPLE` tag on the filename in a `Sample` folder inside the output folder. `true` is 60 seconds from 2 minutes in; `"0-60"` is a window in seconds. |
+| `include_sample` | boolean | `false` | Download the full title, then also cut a 60 second sample from each muxed file into a `Sample` folder next to it. |
 | `workers` | int | `null` | Threads per track. |
 | `adaptive_workers` | boolean | `false` | Scale segment workers to measured CDN throughput, up to the `workers` cap. |
 | `download_processes` | int | `1` | Split a track's segments across this many processes. Only engages for large batches. |
 | `downloads` | int | `1` | Concurrent tracks. |
 | `worst` | boolean | `false` | Lowest bitrate within quality. |
-| `best_available` | boolean | `false` | Fall back to best available. |
+| `best_available` | boolean | `false` | Fall back to best available. With `all_drm`, a DRM system that does not license is a warning. |
 | `repack` | boolean | `false` | Add REPACK tag. |
 | `tag` | string | `null` | Release group tag. |
 | `tmdb_id` / `imdb_id` / `tvdb_id` / `anilist_id` | - | `null` | External ID overrides. Each resolves its metadata directly instead of by a title search, and is used for tagging. Set `enrich` to also take the title, year and original language. Give at most one of `tmdb_id`, `imdb_id` and `tvdb_id`, since unshackle resolves the others from it. Sending two returns `400`. `anilist_id` still combines with one of them. `tmdb_id` and `tvdb_id` must be positive integers, `imdb_id` must look like `tt1375666`, and `anilist_id` must be a positive integer or a string like `mal:12345`, or the request returns `400`. An ID whose provider is unconfigured, such as `tmdb_id` with no `tmdb_api_key`, fails the job rather than returning `400`. `anilist_id` needs no API key. |
@@ -478,6 +523,7 @@ profile, never a service's own `--profile` option.
 | `400` | `INVALID_PARAMETERS` | A parameter failed validation. |
 | `400` | `INVALID_SERVICE` | Unknown or disallowed service. |
 | `403` | `FORBIDDEN` | A gated parameter is not permitted. |
+| `403` | `SERVER_CDM_CAPPED` | The API key has a `server_cdm_max_height` for the service, and the job has no `quality` at or under it, sets `best_available`, or has `HYBRID` in `range`. |
 
 ### `GET /api/download/jobs`
 
@@ -522,13 +568,15 @@ Show download jobs, with optional filtering and sorting.
           "segments_done": 120,
           "segments_total": 300,
           "speed": "5.2 MB/s",
-          "skipped_subtitles": []
+          "skipped_subtitles": [],
+          "input_prompt": null,
+          "notice": null
         }
       ]
     }
     ```
 
-With `full=true`, each job additionally includes `parameters` (with secrets redacted), `started_time`, `completed_time`, `output_files`, `error_message`, `error_details`, `error_code`, `error_traceback`, and `worker_stderr`.
+With `full=true`, each job additionally includes `parameters` (with secrets redacted), `started_time`, `completed_time`, `output_files`, `error_message`, `error_details`, and `error_code`. When you start the server with `--debug-api`, each job also includes `error_traceback` and `worker_stderr`.
 
 | Status | Error code | Meaning |
 | --- | --- | --- |
@@ -662,6 +710,7 @@ Enqueue a **new** job that reuses a terminal job's service, title, and parameter
 | `409` | `CONFLICT` | Job is not in a terminal state. |
 | `400` | `INVALID_SERVICE` | Service is no longer allowed. |
 | `403` | `FORBIDDEN` | A gated parameter is no longer permitted. |
+| `403` | `SERVER_CDM_CAPPED` | The job is no longer inside the `server_cdm_max_height` of the API key. |
 
 ### `POST /api/download/jobs/{job_id}/priority`
 
@@ -678,6 +727,40 @@ Move a queued job to the front of the download queue.
 | `200` | - | Job moved to front. |
 | `404` | `JOB_NOT_FOUND` | No such job. |
 | `409` | `CONFLICT` | Job is not queued. |
+
+### `POST /api/download/jobs/{job_id}/input`
+
+Answer the prompt that a running job waits on. A service can ask for input during a job, for
+example an OTP code, a PIN, or a device-code confirmation. The job then shows the prompt in its
+`input_prompt` field and in its `progress` events. Show the prompt to the user and send the
+answer here.
+
+A job that waits for an approval on another device, such as a pair code login, shows the
+message in its `notice` field instead. A notice needs no answer: show it to the user and keep
+polling.
+
+=== "Request"
+
+    ```json
+    { "response": "123456" }
+    ```
+
+=== "Response `200`"
+
+    ```json
+    { "status": "accepted" }
+    ```
+
+| Status | Error code | Meaning |
+| --- | --- | --- |
+| `200` | - | Answer sent to the job. The `input_prompt` field goes back to `null`. |
+| `400` | `INVALID_INPUT` | The body is not JSON, or it has no `response`. |
+| `404` | `JOB_NOT_FOUND` | No such job. |
+| `409` | `CONFLICT` | The job does not wait on a prompt. |
+
+!!! warning
+    The job keeps its download slot while it waits. It fails with `AUTH_FAILED` if nobody
+    answers the prompt within 10 minutes.
 
 ---
 
@@ -855,13 +938,31 @@ POST /api/session/{id}/keys/bad → report a server-vault content key that did n
 DELETE /api/session/{id}        → tear down, harvest updated cache
 ```
 
+### Slow responses
+
+The `titles`, `tracks` and `license` routes can take minutes on a large catalogue. When the
+answer is not ready after 30 seconds, the route sends status `200` and the headers. It then
+sends a newline every 30 seconds until the JSON body is ready. JSON parsers ignore the leading
+newlines. This keeps the connection open through a reverse proxy that closes an idle request.
+
+!!! warning "A late failure has status `200`"
+    The server sent the status before the work ended. A failure after the first 30 seconds
+    arrives as the [standard error body](errors.md#the-standard-error-shape) with status `200`.
+    Check `status` in the body, not only the HTTP status. The body has no HTTP status field.
+    Use `error_code` and `retryable` to decide what to do.
+
+A slow response is not gzip-compressed. Gzip output cannot start before the body is ready, and
+the newlines must go out at once.
+
 ### `POST /api/session/create`
 
-Make a remote session for a service and title. Authentication runs asynchronously in the background. This call returns immediately with `status: "authenticating"`, and you then poll the prompt endpoint. The body accepts `service` and `title_id` (both required). It also accepts a broad set of optional keys, because the body allows `additionalProperties`. These are `credentials` (`{username, password, extra?}`), `cookies` (base64 of zlib-compressed Netscape cookie file), `proxy`, `no_proxy`, `profile`, `cache` (map of forwarded cache files, keyed by the file path relative to the service cache directory with `/` separators and no `.json` suffix, so a nested key such as `session_web/<sha1>` lands in a subdirectory), `client_region`, `proxy_region`, `cdm_type`, `range_`, `vcodec`, `quality`, `best_available`, `client`, and any service CLI options. `proxy_region` is the country code the client resolved `proxy` from; the server matches it against its own accounts. `client` is a freeform object the dashboard shows as sent (the CLI puts `version`, `code_hash`, `platform` and a redacted `argv` in it); the server ignores it above 4096 bytes of JSON.
+Make a remote session for a service and title. Authentication runs asynchronously in the background. This call returns immediately with `status: "authenticating"`, and you then poll the prompt endpoint. The body accepts `service` and `title_id` (both required). It also accepts a broad set of optional keys, because the body allows `additionalProperties`. These are `credentials` (`{username, password, extra?}`), `cookies` (base64 of zlib-compressed Netscape cookie file), `proxy`, `no_proxy`, `profile`, `cache` (map of forwarded cache files, keyed by the file path relative to the service cache directory with `/` separators and no `.json` suffix, so a nested key such as `session_web/<sha1>` lands in a subdirectory), `client_region`, `proxy_region`, `cdm_type`, `range_`, `vcodec`, `quality`, `best_available`, `dl_params`, `client`, and any service CLI options. `proxy_region` is the country code the client resolved `proxy` from; the server matches it against its own accounts. `client` is a freeform object the dashboard shows as sent (the CLI puts `version`, `code_hash`, `platform` and a redacted `argv` in it); the server ignores it above 4096 bytes of JSON.
+
+`dl_params` is an object with the `dl` track selection: `lang`, `v_lang` and `a_lang` (arrays of language strings), `acodec` (an array of audio codec names or `dl -a` aliases such as `ddp`), and `forced_subs` and `exact_lang` (booleans). The service reads these values from `ctx.parent.params`. The server uses the `dl` default for each absent or malformed value, and drops an unknown codec name.
 
 Service CLI options also travel in a nested `service_params` object, which wins over a flat key with the same name. `profile` at the top level always means the credentials profile, never a service's own `--profile` option.
 
-The `proxy` value must be a full proxy URI, unless the operator gives your API key `server_proxy` in the `serve.users` config. Without it, the server does not resolve country codes with its own proxy providers. It rejects the request with `INVALID_PROXY` when no `proxy` is set and the reported `client_region` differs from the server's region. A request that reports no `client_region` is not blocked. Pass `proxy` with your own proxy, or `no_proxy` to accept the server's own connection. With `server_proxy`, the server resolves a country code and picks a proxy for your `client_region` itself.
+The `proxy` value must be a full proxy URI, unless the operator gives your API key `server_proxy` in the `serve.users` config. Without `server_proxy`, the server does not resolve country codes with its own proxy providers. It rejects the request with `INVALID_PROXY` when no `proxy` is set and the reported `client_region` differs from the server's region. A request that reports no `client_region` is not blocked. Pass `proxy` with your own proxy, or `no_proxy` to accept the server's own connection. With `server_proxy`, the server resolves a country code and picks a proxy for your `client_region` itself. A Control D resolver, `controld://<resolver>@dns.controld.com`, counts as a full proxy URI: the server runs a forwarder for it and needs no Control D configuration of its own.
 
 === "Response `200`"
 
@@ -874,7 +975,7 @@ The `proxy` value must be a full proxy URI, unless the operator gives your API k
     }
     ```
 
-`server_account` is `true` when the server authenticated with one of its own accounts (`serve.server_accounts`). Otherwise the server uses only what the client sent, and never falls back to its own credentials. Only a client that sent its own cookies, credentials, or cache files gets cookies, auth headers, and the remote session cache back. A client that answered a login prompt (a device code or an OTP) gets them too. This applies only when the login then succeeds and the remote session does not use a server account. For any other remote session (a server account, or an anonymous login through the server's proxy) the tracks and segments responses carry no cookies and no auth headers. The server also drops secret-looking keys from track data, and the cache stays on the server. A server-account service also refuses a client proxy URI, because the server's login would pass through it.
+`server_account` is `true` when the server authenticated with one of its own accounts (`serve.server_accounts`). Otherwise the server uses only what the client sent, and never falls back to its own credentials. When the login succeeds and the remote session does not use a server account, the login belongs to the client, and the client gets cookies, auth headers, and the remote session cache back. A remote session on the server's device is the exception: the client gets its cookies back, but no auth headers and no cache. For a server-account remote session the tracks and segments responses carry no cookies and no auth headers. The server also drops secret-looking keys from track data, and the cache stays on the server. A server-account service also refuses a client proxy URI, because the server's login would pass through it.
 
 | Status | Error code | Meaning |
 | --- | --- | --- |
@@ -959,6 +1060,7 @@ The buffer keeps the newest 500 records. Only the service instance's own logger 
 ### `GET /api/session/{session_id}/titles`
 
 Fetch the titles for an authenticated remote session.
+A slow answer arrives as a [slow response](#slow-responses).
 
 === "Response `200`"
 
@@ -973,7 +1075,7 @@ Requires an authenticated remote session. Otherwise it returns `404 SESSION_NOT_
 
 ### `POST /api/session/{session_id}/tracks`
 
-Get tracks and chapters for a specific title within the remote session. Body: `{ "title_id": "..." }` (required). Unlike `list-tracks`, track objects here **include** download URLs, along with session headers/cookies and manifest data the client needs to download directly.
+Get tracks and chapters for a specific title within the remote session. Body: `{ "title_id": "..." }` (required). Unlike `list-tracks`, track objects here **include** download URLs, along with session headers/cookies and manifest data the client needs to download directly. A slow answer arrives as a [slow response](#slow-responses).
 
 `manifests` holds each served DASH/ISM manifest once. A service can build an AdaptationSet of its own that the served manifest does not contain. `track_manifests` holds a one-AdaptationSet MPD for each such track, and the client re-parses that in place of the whole manifest.
 
@@ -1041,6 +1143,7 @@ Get the HLS segments a service drops (ads, bumpers, dub cards). The server runs 
 ### `POST /api/session/{session_id}/license`
 
 Get the content keys for the DRM. The `mode` field selects one of two modes.
+A slow answer arrives as a [slow response](#slow-responses).
 
 **Proxy mode** (`mode: "proxy"`, the default) forwards the client's CDM `challenge` to the service's license endpoint and returns the raw license bytes:
 
@@ -1061,7 +1164,7 @@ Get the content keys for the DRM. The `mode` field selects one of two modes.
 === "Single: Response `200`"
 
     ```json
-    { "keys": { "<kid_hex>": "<key_hex>" }, "vault_keys": ["<kid_hex>"] }
+    { "keys": { "<kid_hex>": "<key_hex>" }, "vault_keys": ["<kid_hex>"], "drm_type": "widevine" }
     ```
 
 === "Batch: Response `200`"
@@ -1075,7 +1178,7 @@ Get the content keys for the DRM. The `mode` field selects one of two modes.
 | `track_id` / `track_ids` | Single track, or a batch of tracks. |
 | `challenge` | Base64 CDM challenge (proxy mode). |
 | `pssh` | Base64 PSSH (server-CDM mode). |
-| `drm_type` | `widevine` (default) or `playready`. |
+| `drm_type` | `widevine` (default) or `playready`. In server-CDM mode the server's `cdm` mapping for the service decides the DRM system and the response `drm_type` names the system that licensed. The client's value decides only when the server has no mapping for the service. |
 | `mode` | `proxy` (default) or `server_cdm`. |
 | `clear_tracks` (response) | Requested track ids that carry no DRM, so they have no keys. Absent when every requested track is encrypted. |
 | `vault_keys` (response) | KIDs whose content key came from a server vault, not the CDM. The client proves such a content key with a decode before it trusts it; the field is absent when every content key came from the CDM. |
@@ -1172,6 +1275,7 @@ The server serialises every structured error raised inside a handler to the same
 | `INVALID_PARAMETERS` | 400 |
 | `AUTH_FAILED` | 401 |
 | `FORBIDDEN` | 403 |
+| `SERVER_CDM_CAPPED` | 403 |
 | `GEOFENCE` | 403 |
 | `NOT_FOUND` | 404 |
 | `NO_CONTENT` | 404 |

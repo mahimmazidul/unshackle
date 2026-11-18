@@ -162,10 +162,12 @@ full detail:
 | `segments_total` | number | Total segments for the track in progress. |
 | `speed` | string | Transfer speed of the track in progress, e.g. `4.20 MB/s`. |
 | `skipped_subtitles` | list | Subtitles that were skipped as non-fatal failures (when `skip_subtitle_errors` is set). |
+| `input_prompt` | string or `null` | The prompt the service waits on. Answer it with `POST /api/download/jobs/{job_id}/input`. |
+| `notice` | string or `null` | A message the service shows while it waits for an approval on another device, such as a pair code. It needs no answer. |
 
 The full detail adds `started_time`, `completed_time`, `output_files`, the redacted
-`parameters`, and, for failed jobs, `error_message`, `error_details`, `error_code`,
-`error_traceback`, and `worker_stderr`.
+`parameters`, and, for failed jobs, `error_message`, `error_details`, and `error_code`.
+With `--debug-api`, it also adds `error_traceback` and `worker_stderr`.
 
 !!! example "A typical polling loop"
     ```shell
@@ -363,6 +365,12 @@ Three temporary files bridge the parent and the job worker:
   service, title ID, and merged parameters.
 - **`progress.json`**: the job worker writes it continuously as the download proceeds.
 - **`result.json`**: the job worker writes it at the end.
+
+The job worker has no terminal. When a service asks the user for input, the job worker writes
+the prompt to `progress.json` as `input_prompt` and waits. The answer from
+`POST /api/download/jobs/{job_id}/input` goes to the job worker on its stdin.
+When a service waits for an approval on another device, the job worker writes the message as
+`notice` and sets it back to `null` when the wait ends.
 
 Running each download out-of-process isolates the server from crashes, memory growth,
 and blocking work inside the download engine, and makes hard cancellation (killing the

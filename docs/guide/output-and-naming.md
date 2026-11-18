@@ -330,6 +330,22 @@ A few muxing behaviors are automatic and not configurable:
 
 The `--no-mux` flag skips muxing entirely and writes the individual track files, each with a track-type suffix, into the same output/folder structure.
 
+## Sample files
+
+[`--sample`](cli-reference.md#output-muxing-files) and `--include-sample` write a sample into a
+`Sample` folder inside the output folder of the title. The sample keeps the filename of the
+title, with a `SAMPLE` tag at the end. The tag uses the separator of the output template.
+
+```text title="A movie with --include-sample"
+Some.Movie.2026.1080p.EXAMPLE.WEB-DL.H.264-TAG/
+├── Some.Movie.2026.1080p.EXAMPLE.WEB-DL.H.264-TAG.mkv
+└── Sample/
+    └── Some.Movie.2026.1080p.EXAMPLE.WEB-DL.H.264-TAG.SAMPLE.mkv
+```
+
+With `--sample`, the `Sample` folder holds the only output file. If the run makes no title
+folder, the `Sample` folder is in the downloads directory.
+
 ## Tags & group naming
 
 The release-group tag is the `-TAG` portion at the end of scene-style names, which the `{tag}` variable gives.
@@ -380,7 +396,9 @@ unicode_filenames: true
 | Value | Result |
 |---|---|
 | `false` (default) | `기생충` → transliterated ASCII; accents stripped. |
-| `true` | Native characters preserved in filenames and folders. |
+| `true` | Native characters preserved in filenames and folders, with the vowel and tone marks of languages such as Thai, Hindi and Bengali. |
+
+With each value, unshackle first normalises the name to Unicode NFC. A title that a service sends in composed form and in decomposed form gives the same name.
 
 Regardless of this setting, unshackle always removes or replaces a set of filesystem-unsafe and structural characters during sanitisation. For example, `/` and `;` become ` & `, and unshackle removes characters like `\ * ! ? , ' " < > | $ # ~`. This is why you must never put path-unsafe characters directly in a template.
 

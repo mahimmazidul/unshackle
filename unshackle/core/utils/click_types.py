@@ -4,6 +4,7 @@ from typing import Any, Optional, Union
 
 import click
 from click.shell_completion import CompletionItem
+from unshackle.core.constants import DEFAULT_SAMPLE
 
 
 class VideoCodecChoice(click.Choice):
@@ -151,11 +152,20 @@ class SubtitleCodecChoice(click.Choice):
 
 
 class ContextData:
-    def __init__(self, config: dict, cdm: Any, proxy_providers: list, profile: Optional[str] = None):
+    def __init__(
+        self,
+        config: dict,
+        cdm: Any,
+        proxy_providers: list,
+        profile: Optional[str] = None,
+        cdm_entry: bool = False,
+    ):
         self.config = config
         self.cdm = cdm
         self.proxy_providers = proxy_providers
         self.profile = profile
+        # True when the service's own entry in the cdm config named the loaded device
+        self.cdm_entry = cdm_entry
 
 
 class SeasonRange(click.ParamType):
@@ -471,7 +481,7 @@ class SlowDelayRange(click.ParamType):
     name = "delay_range"
 
     def convert(
-        self, value: Any, param: Optional[click.Parameter], ctx: Optional[click.Context]
+        self, value: Any, param: Optional[click.Parameter] = None, ctx: Optional[click.Context] = None
     ) -> Optional[tuple[int, int]]:
         if isinstance(value, tuple):
             return value
@@ -557,6 +567,24 @@ class LazySubtitleCodec(SubtitleCodecChoice):
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._loaded(), name)
+class SampleRange(click.ParamType):
+    """Parses a sample window string like '60-120' into a tuple of (start, end) seconds."""
+
+    name = "sample_range"
+
+    def convert(
+        self, value: Any, param: Optional[click.Parameter] = None, ctx: Optional[click.Context] = None
+    ) -> Optional[tuple[int, int]]:
+        if isinstance(value, bool):
+            return DEFAULT_SAMPLE if value else None
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            value = f"{value[0]}-{value[1]}"
+
+        match = re.match(r"^(\d+)-(\d+)$", str(value))
+        if not match or int(match.group(1)) >= int(match.group(2)):
+            self.fail(f"'{value}' is not a valid sample window. Use format: START-END (e.g., 60-120)", param, ctx)
+
+        return (int(match.group(1)), int(match.group(2)))
 
 
 SEASON_RANGE = SeasonRange()
@@ -566,3 +594,4 @@ AUDIO_CODEC_LIST = LazyAudioCodecList()
 VIDEO_CODEC_LIST = LazyVideoCodecList()
 SUBTITLE_CODEC = LazySubtitleCodec()
 SLOW_DELAY_RANGE = SlowDelayRange()
+SAMPLE_RANGE = SampleRange()

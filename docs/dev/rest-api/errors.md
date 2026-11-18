@@ -100,6 +100,7 @@ but the defaults hold for the overwhelming majority of responses.
 | `INVALID_PARAMETERS` | 400 | One or more download or query parameters failed validation (bad codec, bitrate, sort field, and so on). |
 | `AUTH_FAILED` | 401 | Authentication with the streaming service failed (bad credentials or cookies). |
 | `FORBIDDEN` | 403 | The action is not allowed. Raised by server-side gates (per-key restrictions on CDM or credential overrides) and by remote session IP binding. |
+| `SERVER_CDM_CAPPED` | 403 | The server CDM does not license live above the `server_cdm_max_height` of the API key. `details.reason` is `server_cdm_max_height` (with `details.max_height`), `client_device`, for a remote session where the client's own device licenses, or `server_device`, for a remote session that runs on the server's device. A remote client licenses the track with its own device, except for `server_device`: then only its own vaults can supply the key. |
 | `GEOFENCE` | 403 | The title is not available in the applicable region. |
 | `NOT_FOUND` | 404 | A requested resource (title, history entry, and so on) does not exist. |
 | `NO_CONTENT` | 404 | The request was valid but produced nothing: no matching titles, tracks, episodes, or keys. |
@@ -203,6 +204,18 @@ body that uses an integer `status` and no `error_code` or `timestamp`.
     (integer `status`, no `error_code`). The `GET /api/health` endpoint is exempt
     from authentication, so it never returns the key-error shape.
 
+## Late failures with status `200`
+
+The remote session `titles`, `tracks` and `license` routes send status `200` and the headers
+when the work takes longer than 30 seconds. They then send a newline every 30 seconds to keep
+the connection open. See [Slow responses](endpoints.md#slow-responses). A failure after that
+time arrives as the standard error body, but with status `200`. The body has no field for the
+HTTP status that the error would otherwise have. `error_code` and `retryable` stay in the body.
+
+!!! warning "Check the body on these routes"
+    On these routes a `200` does not always mean success. Parse the body and treat
+    `"status": "error"` with an `error_code` as a failure.
+
 ## Responses with no body
 
 Not every failure or completion has a JSON body. Some endpoints answer with
@@ -257,7 +270,8 @@ For anyone writing a consumer of the API, a durable strategy is:
 
 !!! note "Reference consumer"
     unshackle's own remote-download client treats any status of `400` or above as
-    fatal: it logs `Server error [<error_code>]: <message>` and exits. It also wraps
+    fatal, and a `200` body with `"status": "error"` and an `error_code` too: it logs
+    `Server error [<error_code>]: <message>` and exits. It also wraps
     requests in a retry adapter (five attempts, backing off on `429`, `500`, `502`,
     `503`, and `504`). This is a reasonable template for your own client's error
     handling.

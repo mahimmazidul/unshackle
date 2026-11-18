@@ -5,6 +5,7 @@ loop licensed a PlayReady-only track as Widevine by accident. A Widevine device 
 license PlayReady-only content, but only as a deliberate step in the batch loop.
 """
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -44,6 +45,7 @@ def test_extractor_is_type_strict():
 
 async def _run_batch(monkeypatch, tracks, cdm_type, calls):
     session = SimpleNamespace(
+        lock=asyncio.Lock(),
         service_tag="EXAMPLE",
         service_instance=SimpleNamespace(),
         served_keys={},
@@ -53,7 +55,7 @@ async def _run_batch(monkeypatch, tracks, cdm_type, calls):
     async def fake_get_session(session_id, request):
         return session
 
-    def fake_single(service, title, track, pssh_str, drm_type, request, sources=None):
+    def fake_single(service, title, track, pssh_str, drm_type, request, sources=None, refusal=None, vault_only=False):
         calls.append((pssh_str, drm_type))
         return {"00" * 16: "key"}
 
@@ -62,6 +64,7 @@ async def _run_batch(monkeypatch, tracks, cdm_type, calls):
     monkeypatch.setattr(handlers, "ensure_track_drm", lambda track, session=None, init_data=None: None)
     monkeypatch.setattr(handlers, "find_title_for_track", lambda tid, session: SimpleNamespace())
     monkeypatch.setattr(handlers, "detect_cdm_type_for_service", lambda tag, cfg: cdm_type)
+    monkeypatch.setattr(handlers, "resolve_device_name", lambda *a, **k: "dev")
     monkeypatch.setattr(handlers, "handle_single_server_cdm", fake_single)
     monkeypatch.setattr(handlers.config, "serve", {"users": {}}, raising=False)
     resp = await handlers.session_license_handler(

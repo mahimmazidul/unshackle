@@ -324,6 +324,9 @@ remote_cdm:
     so a host without the suffix points the requests at the wrong location. The symptom
     is `404` responses from the server rather than an obvious configuration error.
 
+A pywidevine or pyplayready serve API can operate behind a reverse proxy or a CDN. Refer to
+[Serve APIs behind a proxy](../reference/configuration/drm.md#remote_cdm).
+
 ### Decrypt Labs (hosted KeyXtractor API)
 
 Set `type: decrypt_labs` to use Decrypt Labs' hosted KeyXtractor service, which
@@ -333,7 +336,7 @@ includes an intelligent key-caching layer:
 remote_cdm:
   - name: decryptlabs
     type: decrypt_labs
-    device_name: L1        # ChromeCDM, L1, L2 (Widevine) or SL2, SL3 (PlayReady)
+    device_name: L1        # ChromeCDM, L1, L2, L3 (Widevine) or SL2, SL3 (PlayReady)
     # host: https://keyxtractor.decryptlabs.com   # optional, this is the default
     # secret: ...          # optional if decrypt_labs_api_key is set globally
 
@@ -404,8 +407,8 @@ encrypted file (for Widevine, PlayReady, and ClearKey-CENC):
 - **shaka-packager** is the default.
 - **mp4decrypt** is part of the Bento4 tools.
 
-Both must be discoverable in unshackle's bundled `binaries/` directory or on your
-`PATH`. If the selected tool's binary is missing at decrypt time, unshackle raises an
+Both must be discoverable in unshackle's bundled `binaries/` directory, the
+`binaries` folder of your user data directory, or on your `PATH`. If the selected tool's binary is missing at decrypt time, unshackle raises an
 "executable not found but is required" error. See [dependencies](../getting-started/installation.md) for
 installation.
 
@@ -479,6 +482,50 @@ Use the `cdm` mapping's [DRM-based selection](#advanced-selection-by-quality-drm
 to configure a device for each system. unshackle selects the right one per track
 automatically.
 
+### License both systems with `--all-drm`
+
+By default a track licenses with one DRM system. `--all-drm` gets the content keys for
+Widevine and for PlayReady on each track that offers both. Use it with `--skip-dl` and
+`--export` to keep the content keys and the DRM init data of both systems. The two
+systems can list different sets of KIDs, and unshackle keeps the content keys of both.
+
+```shell
+unshackle dl --skip-dl --all-drm --export EXAMPLE 81234567
+```
+
+- The `cdm` mapping must name a device for each system. A single device name, or `--cdm`,
+  stops the run with an error that names the missing system.
+- The order of the `widevine` and `playready` config keys in the `cdm` entry sets the order
+  of the two systems, as in a run without the flag. Each track licenses first with the
+  system of the first config key.
+- A Key Vault is read first, as in a run without the flag. A DRM system sends a challenge
+  only for a KID that no Key Vault and no earlier track of the run gave a content key
+  for. When the first system returns all the KIDs of the second, the second sends no
+  challenge.
+- With `--cdm-only`, unshackle does not read the Key Vaults, and each DRM system sends one
+  challenge for a set of KIDs in a run.
+- A service with a Widevine licence function only gets the PlayReady challenge through that
+  function. If its licence server refuses the challenge, that DRM system does not license.
+- If one DRM system does not license, the title fails. With `--best-available` unshackle
+  shows a warning and continues, if the other system gave the content key of the track.
+  unshackle does not send the challenge again for the same KIDs in that run.
+- A track gets its DRM systems from the manifest. For a DASH track or a direct URL,
+  unshackle also reads the init segment for a system that the manifest does not carry.
+- With `--cdm-only`, the service gets a challenge from each DRM system for each set of
+  KIDs. A licence server that limits the request rate can answer `429`, and unshackle then
+  tries again.
+
+!!! note "Where `--all-drm` licenses one system only"
+    - A service that gets a different manifest for each DRM system. unshackle shows a
+      warning one time when a track offers one system only.
+    - A service that fetched its playback for one DRM system and refuses the other. That
+      system does not license, so the title fails unless you use `--best-available`.
+    - An HLS playlist that changes its `EXT-X-KEY` entries part-way: only the first set
+      licenses with the second system.
+    - A remote session that the server CDM licenses, and `unshackle import`. unshackle
+      shows a warning and ignores the flag.
+    - A remote CDM that stores content keys can answer without a challenge to the service.
+
 ## Keys, vaults, and caching
 
 Fetching a license is comparatively slow and, for some services, rate-limited.
@@ -498,7 +545,7 @@ control this trade-off on the `dl` command:
 |------|--------|
 | `--vaults-only` | Never send a license request; use only cached/vault keys. Fails if a content key is missing. |
 | `--cdm-only` | Ignore vaults for sourcing keys and always perform a fresh license request. Over a `server_cdm` remote session the server still reads its own vaults; the flag only skips the client's decode check on the key it gets back. |
-| `--cdm <name>` | Use the named CDM device for this run instead of the one the `cdm` config maps for the service. |
+| `--cdm <name>` | Use the named CDM device for this run instead of the one the `cdm` config maps for the service. Over `--remote`, that device licenses the remote session, not the server CDM. |
 
 See [key vaults](vaults.md) for how to configure vault backends.
 

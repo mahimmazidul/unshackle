@@ -66,6 +66,7 @@ Declared at the top of your service class, these are static descriptors:
 | `GEOBLOCK` | `tuple[str, ...]` | ISO region codes where the service refuses to work; every other region is allowed. Use it for a service that works worldwide except in its home market. |
 | `VAULT_TAG` | `Optional[str]` | Overrides the key-vault namespace; defaults to the service's own tag. |
 | `AUTH_METHODS` | `Optional[tuple[str, ...]]` | Accepted auth methods (`"cookies"` / `"credentials"`). When `None`, the REST `/services` endpoint infers them from `authenticate()`. |
+| `ANONYMOUS_SEARCH` | `bool` | `search()` needs no login and no state from `authenticate()`. A search then skips the cookie load, `authenticate()` and the cookie save. Default `False`. |
 | `ANIME` | `bool` | The catalogue is anime, so metadata lookups prefer AniList. A title's own `anime` flag overrides it. |
 | `DAILY` | `bool` | The catalogue is daily/date-based, so unshackle names episodes by air date. A title's own `daily` flag overrides it. |
 
@@ -83,12 +84,17 @@ These are abstract. A service will not load unless it defines all three:
   `CookieJar` into `self.session.cookies` and stores `self.credential`. Override it to
   do a real login handshake.
 - **`search()`**: raises `NotImplementedError` by default. Write it so that the
-  `search` command can operate.
+  `search` command can operate. unshackle calls `authenticate()` first, unless the
+  service sets `ANONYMOUS_SEARCH`.
 - **DRM license hooks**: `get_widevine_service_certificate`, `get_widevine_license`,
   `get_playready_license` (delegates to Widevine by default), and
   `get_clearkey_license` (returns `None` by default). See [DRM hooks](#drm-hooks) below.
-- **`request_input(prompt)`**: prompts the user. It goes through the serve-mode input
-  bridge or the rich console.
+- **`request_input(prompt)`**: prompts the user. It goes through the remote-dl input
+  bridge, the REST download job relay, or the rich console.
+- **`wait_for_approval(message, check, timeout, interval=3.0)`**: shows a message, then
+  calls `check` until it returns a value. Use it for a login that the user approves on
+  another device, such as a pair code. A remote-dl session shows the message as a log
+  line, and a REST download job shows it as the job's `notice`.
 - **Event callbacks**: `on_segment_downloaded`, `on_track_downloaded`,
   `on_track_decrypted`, `on_track_repacked`, `on_track_multiplex` let a service react to
   pipeline events (for example, MonaLisa decrypts each segment in `on_segment_downloaded`).
@@ -428,6 +434,11 @@ HLS streams that carry a valid DV RPU but advertise plain HEVC (`dv_compatible_b
 extracts the RPU with `dovi_tool`, and injects it onto the base layer, to make a single
 track that carries both HDR10 metadata and the DV RPU. Both are automatic once the
 pipeline selects the right tracks. A service only needs to give accurate ranges.
+
+The fixup replaces the track file with a raw HEVC file. A raw HEVC file has no duration and
+FFmpeg cannot seek in it. When a hybrid base also gets the fixup, the pipeline keeps the
+container file of that track until its hybrid step is complete, and the hybrid step reads
+the container file.
 
 ## Request and HTTP session objects
 

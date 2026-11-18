@@ -1,12 +1,17 @@
 import json
+import logging
 import random
 import re
 from typing import Optional
 from urllib.parse import quote
 
 import requests
+from unidecode import unidecode
 
 from unshackle.core.proxies.proxy import Proxy
+from unshackle.core.utilities import COUNTRY_CODE_ALIASES
+
+log = logging.getLogger("proxies.surfsharkvpn")
 
 CLUSTER_SUFFIX = ".prod.surfshark.com"
 # Cluster slugs from the API, e.g. us-bos, in-del, uk-lon-st003.
@@ -76,7 +81,20 @@ class SurfsharkVPN(Proxy):
             raise TypeError(f"Expected server_map to be a dict mapping a region to a hostname, not '{raw_map!r}'.")
         self.username = username
         self.password = password
-        self.server_map = {str(k).lower().strip(): v for k, v in (raw_map or {}).items()}
+        self.server_map: dict[str, str] = {}
+        for region, server in (raw_map or {}).items():
+            server = _as_str(server)
+            if not server or server.isdigit():
+                # A warning, not an error: one stale entry must not disable the whole proxy provider.
+                log.warning(
+                    "SurfsharkVPN: ignoring server_map entry '%s: %s'. Use a server name such as 'us-dal'. "
+                    "SurfsharkVPN no longer uses numeric server IDs.",
+                    region,
+                    server,
+                )
+                continue
+            country, sep, city = str(region).lower().strip().partition(":")
+            self.server_map[CODE_ALIASES.get(country, country) + sep + city] = server
 
         self.countries = self.get_countries()
 
@@ -103,7 +121,7 @@ class SurfsharkVPN(Proxy):
         if pinned:
             return self._uri(pinned)
 
-        direct = _hostname(query)
+        direct = self._known_cluster(query)
         if direct:
             return self._uri(direct)
 
@@ -120,7 +138,8 @@ class SurfsharkVPN(Proxy):
             return self._uri(pinned)
 
         if not COUNTRY_RE.match(code):
-            raise ValueError(f"The query provided is unsupported and unrecognized: {query}")
+            # A city or slug this provider does not serve: let the next provider try it.
+            return None
 
         country = self.get_country(by_code=code)
         if not country:
@@ -133,6 +152,19 @@ class SurfsharkVPN(Proxy):
                 "Try again later. If the issue persists, double-check the query."
             )
         return self._uri(hostname)
+
+    def _known_cluster(self, query: str) -> Optional[str]:
+        """The full hostname of a cluster slug the API lists, else None.
+
+        ``us-bos`` is a cluster; ``us-central-150`` and ``us150`` are not, so they fall through
+        to the next proxy provider instead of being turned into a hostname that cannot resolve.
+        """
+        hostname = _hostname(query)
+        if not hostname:
+            return None
+        if self._cluster(hostname) or self._cluster(hostname.split(".", 1)[0]):
+            return hostname
+        return None
 
     def _remember(self, hostname: str) -> None:
         self.last_host = hostname
@@ -185,18 +217,16 @@ class SurfsharkVPN(Proxy):
         servers = [x for x in self.countries if str(x.get("countryCode") or "").lower() in aliases]
 
         if city:
-            city_lower = city.lower()
-            city_servers = [
-                x
-                for x in servers
-                if x.get("location", "").lower() == city_lower or x.get("city", "").lower() == city_lower
+            wanted = self.fold(city)
+            located = [(self.fold(x.get("location") or x.get("city") or ""), x) for x in servers]
+            city_servers = [x for folded, x in located if folded == wanted] or [
+                x for folded, x in located if wanted and folded.startswith(wanted)
             ]
             if city_servers:
                 servers = city_servers
             else:
                 raise ValueError(
-                    f"No servers found in city '{city}' for country '{country_id}'. "
-                    "Try a different city or check the city name spelling."
+                    f"No servers found in city '{city}'. Try a different city or check the city name spelling."
                 )
 
         if not servers:
@@ -205,12 +235,18 @@ class SurfsharkVPN(Proxy):
         generic = [x for x in servers if str(x.get("type") or "generic").lower() == "generic"]
         pool = generic or servers
         connection_names = [x["connectionName"] for x in pool if x.get("connectionName")]
+        # A cluster without a connectionName cannot be dialled; skip it rather than crash.
         if not connection_names:
             raise ValueError(
                 f"Could not get random server for country '{country_id}': no servers with connectionName found."
             )
 
         return random.choice(connection_names)
+
+    @staticmethod
+    def fold(text: Optional[str]) -> str:
+        """Reduce a place name to lowercase ASCII letters and digits."""
+        return re.sub(r"[^a-z0-9]", "", unidecode(text or "").lower())
 
     @staticmethod
     def get_countries() -> list[dict]:

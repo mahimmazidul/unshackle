@@ -55,7 +55,7 @@ with `--skip-dl`.
 2. **Authenticate**: sign in to the service with your profile's cookies/credentials.
 3. **Fetch titles**: retrieve the movie, episode list, or album (cached unless
    `--no-cache`/`--reset-cache`).
-4. **Filter titles**: apply `--wanted`, `--latest-episode`, or `--select-titles`.
+4. **Filter titles**: apply `--wanted`, `--latest-episode`, `--latest-episodes`, or `--select-titles`.
 5. **Get tracks**: parse the manifest into video, audio, subtitle, and chapter tracks.
 6. **Select tracks**: narrow each type down using your quality, codec, range, language,
    and bitrate flags.
@@ -65,7 +65,7 @@ with `--skip-dl`.
    `mkvmerge`, and move the finished file to your downloads directory.
 
 `--list` prints the tracks a title exposes and stops before selection. `--list-titles`
-prints every title the service returned and stops before `--wanted`/`--latest-episode`
+prints every title the service returned and stops before `--wanted`/`--latest-episode`/`--latest-episodes`
 filtering. `--skip-dl` runs the license step but skips the actual segment download.
 
 ## Choosing quality
@@ -97,7 +97,7 @@ By default a missing requested resolution is an error. Two flags change that:
 
 | Flag | Behaviour |
 | --- | --- |
-| `--best-available` (`--warn-only`) | If the requested resolution(s) are not present, continue with the best that *is* available instead of failing. Also softens missing video/audio/subtitle languages and hybrid fallbacks. |
+| `--best-available` (`--warn-only`) | If the requested resolution(s) are not present, continue with the best that *is* available instead of failing. Also softens missing video/audio/subtitle languages and hybrid fallbacks, and with `--all-drm` a DRM system that does not license. |
 | `--worst` | Within the specified quality, pick the **lowest** bitrate rendition. **Requires `-q/--quality`.** |
 
 ```shell title="Never fail on a missing resolution"
@@ -148,8 +148,8 @@ unshackle dl -q 2160 -r HDR10,DV EXAMPLE '...'
 !!! warning "HYBRID requires dovi_tool"
     `-r HYBRID` makes a single hybrid track by injecting the Dolby Vision RPU
     metadata onto an HDR10/HDR10+ base layer with **dovi_tool**.
-    It requires the `dovi_tool` binary, resolved from unshackle's `binaries/` folder or
-    your `PATH`. The normal case is a DV track plus an HDR10 or HDR10+ base. With HDR10+
+    It requires the `dovi_tool` binary, resolved from unshackle's `binaries/` folder,
+    the `binaries` folder of your user data directory, or your `PATH`. The normal case is a DV track plus an HDR10 or HDR10+ base. With HDR10+
     and no DV, unshackle converts the HDR10+ metadata to DV instead, which also needs
     `hdr10plus_tool`. With no DV and no HDR10+, the title fails.
     When HDR10+ is present, unshackle prefers it over HDR10 as the base layer.
@@ -416,6 +416,8 @@ video track counts. `--no-audio` and `--no-video` drop the matching requirement.
   `-fs`). Works independently of `--s-lang`, so `-sl all -fsl en` grabs every full
   subtitle but only the English forced track. It accepts exclusions too: `-fsl all,-es`
   keeps every forced subtitle except the Spanish one, and `-fsl -es` means the same.
+- `-fso` / `--forced-subs-only`: keep only the forced subtitle tracks and drop every
+  other subtitle (implies `-fs`). `--s-lang` and `-fsl` still select the languages.
 - `--sub-format`: set the output subtitle format, converting only when necessary.
   Accepts codec names/values and common aliases (`srt`, `vtt`, `ass`, `ssa`, `ttml`,
   and the other codec aliases), or the literal `original` to keep the source format.
@@ -600,10 +602,17 @@ when you want a part on its own.
 | --- | --- |
 | `--select-titles` | Interactively pick episodes of a series, or films when a title has more than one. **Cannot combine with `-w`.** |
 | `--latest-episode` | Download only the single most recent episode. |
-| `--list-titles` | List every title the service returned, then stop. `-w`/`--latest-episode` are not applied to this listing. |
+| `--latest-episodes N` | Download only the N most recent episodes. The newest episodes can come from more than one season. A [split episode](#split-episodes) counts as one episode, and all its parts download. |
+| `--list-titles` | List every title the service returned, then stop. `-w`, `--latest-episode` and `--latest-episodes` are not applied to this listing. |
+
+When `--latest-episode` or `--latest-episodes` is set, `-w` has no effect.
 
 ```shell title="Grab just the newest episode"
 unshackle dl --latest-episode EXAMPLE 81234567
+```
+
+```shell title="Grab the three newest episodes"
+unshackle dl --latest-episodes 3 EXAMPLE 81234567
 ```
 
 ## Including and excluding track types
@@ -630,8 +639,28 @@ Additional track-type flags:
 
 - `-ad` / `--audio-description`: include descriptive (audio-description) tracks, which
   unshackle drops by default.
+- `-ado` / `--audio-description-only`: keep only the descriptive tracks and drop the
+  standard audio. It does not need `-ad`. Add `-A` to download no video or subtitles.
 - `--skip-subtitle-errors`: if a subtitle fails to download, skip it and continue rather
   than aborting the whole title. Video and audio failures remain fatal.
+
+!!! note "The `-only` kind flags"
+    `-ado` and `-fso` each keep one kind of track inside its track type. They do not drop
+    the other track types: `-ado` still downloads the video, and `-fso` still downloads
+    video and audio. Add `-A` or `-S` for that.
+
+    - The language flags still apply. With the default `-l orig`, `-ado` fails when the
+      descriptive track is not in the original language. Select the language with `-al`.
+    - A flag that drops the same tracks is an error, for example `-ado` with `--no-audio`
+      or `-fso` with `-A`.
+    - A title with no track of that kind stops a run of one title. A run of more than one
+      title skips that title with a warning and continues.
+    - unshackle reads the kind from the manifest or from the service. A track that
+      neither of them marks as descriptive or forced does not match.
+
+```shell title="Audio description only, in English"
+unshackle dl -A -ado -al en EXAMPLE 81234567
+```
 
 ```shell title="Subtitles only"
 unshackle dl -S -sl en EXAMPLE 81234567
@@ -653,8 +682,9 @@ Before committing to a long download, inspect what unshackle *would* do:
 | Flag | Effect |
 | --- | --- |
 | `--list` | List the tracks the service exposes for each title, then stop. No selection, no download. |
-| `--list-titles` | List every title the service returned, then stop. `-w`/`--latest-episode` are not applied to this listing. |
+| `--list-titles` | List every title the service returned, then stop. `-w`, `--latest-episode` and `--latest-episodes` are not applied to this listing. |
 | `--skip-dl` | Skip downloading but still acquire the decryption keys. |
+| `--all-drm` | License each track with both Widevine and PlayReady. See [Widevine and PlayReady on the same title](drm-and-cdm.md#widevine-and-playready-on-the-same-title). |
 
 ```shell title="See the track selection without downloading"
 unshackle dl -q 1080 -v H.265 -r HDR10 --list EXAMPLE 81234567
@@ -681,8 +711,23 @@ By default, `mkvmerge` muxes the tracks of a movie or an episode into a single M
 | Flag | Behaviour | Default source |
 | --- | --- | --- |
 | `--no-mux` | Do not mux; keep the individual track files. | - |
+| `--sample` | Download a short sample: 60 seconds from 2 minutes in, or `--sample START-END` for a window in seconds. | - |
+| `--include-sample` | Download the full title, then also cut a 60 second sample from each muxed file into a `Sample` folder. | - |
 | `--split-audio` | Write a separate output file per audio codec instead of merging all audio. | config `muxing.merge_audio` (on) |
 | `--merge-video` | Mux video tracks that share a height, range, and codec into one file, so only language varies inside a file. | config `muxing.merge_video` (off) |
+
+!!! note "`--sample` needs a segmented track"
+    `--sample` downloads only the segments that hold the window, and `mkvmerge` cuts the output
+    to the window. The cut starts at the first video keyframe in the window, so a sample can be
+    some seconds short. unshackle downloads each subtitle track in full and then keeps only the
+    cues of the window.
+
+    The run stops before the download starts in two conditions: a service gives a video or
+    audio track as one file with no segments and no segment index, or the title ends before the
+    window starts.
+
+    A sidecar subtitle file with `sidecar_format: original` is not trimmed. It holds the segments around the
+    window, or the whole file when the track is one file.
 
 !!! note "Music is never muxed"
     A song skips the muxer. unshackle keeps the container that the service
@@ -722,12 +767,14 @@ unshackle dl --tag MYGRP --repack EXAMPLE 81234567
 
 ## Proxies
 
-`--proxy` accepts a full proxy URI, a 2-letter country code (resolved through your
-configured proxy providers), or a `provider:region` form.
+`--proxy` accepts a full proxy URI, a country or location code (resolved through your
+configured proxy providers), or a `provider:region` form. See
+[Proxies & VPN](proxies-and-vpn.md#how-proxy-resolution-works) for the exact grammar.
 
 ```shell title="Proxy forms"
 unshackle dl --proxy us EXAMPLE 81234567
 unshackle dl --proxy nordvpn:ca EXAMPLE 81234567
+unshackle dl --proxy controld:yul EXAMPLE 81234567
 unshackle dl --proxy 'http://user:pass@host:8080' EXAMPLE 81234567
 ```
 
@@ -768,7 +815,7 @@ By default, unshackle checks your **key vaults** first and only asks a **CDM** t
 a content key when the vault misses. You can force one side or the other:
 
 - `--cdm-only`: only use the CDM (skip vaults). Over a `server_cdm` remote session the flag does not reach the server, whose vault shortcut still runs; it only skips the client's decode check on a server key.
-- `--cdm <name>`: use the named CDM device for this run, ignoring the `cdm` config mapping (including its quality and Widevine/PlayReady sub-entries).
+- `--cdm <name>`: use the named CDM device for this run, ignoring the `cdm` config mapping (including its quality and Widevine/PlayReady sub-entries). Over `--remote`, that device licenses the remote session, not the server CDM.
 - `--vaults-only`: only use key vaults and never license through the CDM. A missing
   content key fails.
 
@@ -776,13 +823,67 @@ a content key when the vault misses. You can force one side or the other:
 unshackle dl --skip-dl EXAMPLE 81234567
 ```
 
-`--export` writes a JSON file, into the configured exports directory, containing track
-info and the acquired content keys for each title. This is the format consumed by
-`unshackle import` to reconstruct a download later.
+`--export` writes a `mediaexport` JSON file into the configured exports directory. It holds
+the manifest, the DRM init data, the content keys, the KIDs of each track and the title
+metadata for each title. `unshackle import` reads it to reconstruct a download later, and gives
+each track only the content keys for its KIDs. The importer also reads the
+older unshackle `version: 2` files and unidl's own export files.
 
 ```shell title="Export track info and keys"
 unshackle dl --skip-dl --export EXAMPLE 81234567
 ```
+
+Add `--all-drm` to get the content keys of each DRM system the title offers. The export then
+holds the DRM init data of both. A Key Vault that has a content key stops the challenge for
+its KID; add `--cdm-only` to send a challenge for each DRM system.
+
+```shell title="License with Widevine and PlayReady, no download"
+unshackle dl --skip-dl --all-drm --export EXAMPLE 81234567
+```
+
+The file name tells what the file holds, in the form
+`{title}.{scope}.{resolutions}.{codecs}.{ranges}.{manifests}.{audio}-{SERVICE}.json`:
+
+| Export | File name |
+|---|---|
+| A movie | `Example.Movie.2024.1080p.h264.sdr.hls.aac2.0-EXAMPLE.json` |
+| A whole season | `Example.Show.S01.2160p.h265.sdr.hdr10.dash.dd5.1-EXAMPLE.json` |
+| Episodes 5 to 9 and 12 | `Example.Show.S01E05-E09.S01E12.1080p.h264.sdr.dash.aac2.0-EXAMPLE.json` |
+
+- A dot separates each part and each word of the title. The name has no spaces or
+  underscores. It does not follow your `output_template`: a template with spaces does not
+  change the export name.
+- The scope is `S01` only when the file holds every episode the service lists for that season.
+  Otherwise it names each run of episodes. Whole seasons in a row become `S01-S03`. After three
+  parts, `+N` counts the parts left out. A movie has no scope.
+- The quality parts come from the video and audio tracks selected for the titles in the file.
+  Each value shows once.
+- unshackle renames the file after each write, so the name always matches what the file holds.
+  When a run stops early, the file is complete for the titles it holds.
+- When another file already has the name, unshackle adds `-2`, `-3`, and so on. It never
+  writes over another export.
+
+The run logs the file name at the first write, the track and content key counts for each title, and
+at the end the path and the total counts.
+
+The export holds a content key for each track your flags selected and no others. To make a
+file another person can use, select generously: for example `-a AAC,EC3` and every language
+you want them to have. An import can only pick tracks whose key is in the file. A track
+that another tool exported as a direct file URL is added next to the manifest's own tracks.
+An export with no manifest, for example a unidl export of whole media files, gets all of its
+tracks from those URLs. If such an export does not give the title a language, `orig` has no
+value: select the languages with `-l` and `-vl`.
+
+An import uses only the content keys in the file and in your vaults. It never gets a licence
+from a CDM. When a track needs a content key that neither has, the import stops and names the
+KID. To fix this, export the title again with that track selected.
+
+!!! warning "The export file is a secret"
+    It holds the content keys and usually a signed manifest URL. Hand it over on purpose,
+    not by accident.
+
+The [mediaexport](https://github.com/unshackle-dl/mediaexport) package specifies the
+`mediaexport` format and is the reader and writer unshackle uses.
 
 !!! note "Region is recorded only with a proxy"
     When you use `--proxy`, the export records the region so an import can reproduce the
@@ -794,6 +895,10 @@ unshackle dl --skip-dl --export EXAMPLE 81234567
     back to the title's original language, which comes from `Title.language` on the exporting
     service. If a service never sets it, importing that export fails with a message naming
     the service. Neither end guesses a language for you, so the fix belongs in the service.
+
+    An HLS master playlist gives no language for a video track. When the export gives no
+    title language, the video track takes the language of the default audio track. When
+    the master playlist gives no audio language either, the import stops with a message.
 
 ## Metadata and tagging
 
@@ -950,6 +1055,7 @@ authoritative list.
 | `--daily` | | Fill missing air dates from TVDB during `--enrich`. |
 | `--select-titles` | | Interactively pick episodes or films. |
 | `--latest-episode` | | Only the newest episode. |
+| `--latest-episodes N` | | Only the N newest episodes. |
 | `--video-only` / `--audio-only` / `--subs-only` | `-V` / `-A` / `-S` | Restrict track types. |
 | `--no-video` / `--no-audio` / `--no-subs` / `--no-chapters` / `--no-attachments` | `-nv` / `-na` / `-ns` / `-nc` / `-nt` | Skip track types. |
 | `--worst` | | Lowest bitrate within `-q`. |

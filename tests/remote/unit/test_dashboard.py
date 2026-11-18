@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
+import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from aiohttp import web
 
-from unshackle.core.api.events import bus
+from unshackle.core.api.events import EventBus, bus
 from unshackle.core.api.handlers import api_key_authentication, dashboard_authentication
 from unshackle.core.api.routes import cors_middleware, setup_routes
 from unshackle.core.api.session_store import SessionStore
@@ -24,6 +27,7 @@ pytestmark = pytest.mark.unit
 def dashboard_cfg(monkeypatch):
     monkeypatch.setitem(config.serve, "dashboard", {"key": "dash-secret"})
     monkeypatch.setitem(config.serve, "users", {"tier-key": {"username": "tier1"}})
+    monkeypatch.setitem(config.serve, "services", None)
     stats.requests_total = 0
     stats.requests_rejected = 0
     stats.keys.clear()
@@ -69,6 +73,56 @@ def test_ring_since_and_level() -> None:
     assert ring.seq == 5
     assert [r["msg"] for r in ring.since(3)] == ["m3", "m4"]
     assert [r["msg"] for r in ring.since(0, "warning")] == ["m3"]
+
+
+def _hammer(write: Callable[[], object], read: Callable[[], object]) -> None:
+    """Call ``read`` on this thread while four threads call ``write`` in a loop."""
+    stop = threading.Event()
+
+    def spin() -> None:
+        while not stop.is_set():
+            write()
+
+    old_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    threads = [threading.Thread(target=spin, daemon=True) for _ in range(4)]
+    try:
+        for t in threads:
+            t.start()
+        for _ in range(300):
+            read()
+    finally:
+        stop.set()
+        sys.setswitchinterval(old_interval)
+        for t in threads:
+            t.join()
+
+
+def test_bus_since_survives_concurrent_publish() -> None:
+    local = EventBus(history=5000)
+    _hammer(lambda: local.publish("log", {}), lambda: local.since(0))
+    seqs = [item["seq"] for item in local.history]
+    assert seqs == list(range(seqs[0], seqs[0] + len(seqs)))
+
+
+def test_bus_publish_reenters_its_lock() -> None:
+    local = EventBus()
+
+    def nested() -> None:
+        with local._lock:
+            local.publish("log", {})
+
+    worker = threading.Thread(target=nested, daemon=True)
+    worker.start()
+    worker.join(5)
+    assert not worker.is_alive(), "publish() deadlocked re-entering its own lock"
+    assert [item["seq"] for item in local.since(0)] == [1]
+
+
+def test_ring_since_survives_concurrent_emit() -> None:
+    ring = RingLogHandler(maxlen=5000)
+    record = logging.LogRecord("test.ring", logging.INFO, __file__, 0, "m", None, None)
+    _hammer(lambda: ring.handle(record), lambda: ring.since(0))
 
 
 def test_ring_masks_host_paths_and_secrets_in_records() -> None:
@@ -264,6 +318,33 @@ async def test_dashboard_services_states(aiohttp_client, dashboard_cfg, monkeypa
     if staged != failed:
         assert rows[staged]["state"] == "staged" and rows[staged]["staged_since"] == 1756908900.0
         assert all(r["state"] == "loaded" for t, r in rows.items() if t not in (staged, failed))
+
+
+async def test_dashboard_services_lists_only_configured(aiohttp_client, dashboard_cfg, monkeypatch) -> None:
+    from pathlib import Path
+
+    from unshackle.core import services as services_module
+
+    monkeypatch.setattr(services_module, "SERVICES", [Path(f"/svc/{t}/__init__.py") for t in ("AAA", "BBB", "CCC")])
+    client = await aiohttp_client(make_app())
+    headers = {"X-Secret-Key": "dash-secret"}
+
+    async def listed() -> set[str]:
+        rows = await (await client.get("/api/dashboard/services", headers=headers)).json()
+        count = (await (await client.get("/api/dashboard/status", headers=headers)).json())["services"]
+        assert count == len(rows)
+        return {r["tag"] for r in rows}
+
+    assert await listed() == {"AAA", "BBB", "CCC"}
+    users = {"k1": {"services": ["aaa"]}, "k2": {"services": ["BBB", 1]}, "k3": {"services": "CCC"}, "k4": {}}
+    monkeypatch.setitem(config.serve, "users", users)
+    assert await listed() == {"AAA", "BBB"}
+    monkeypatch.setitem(config.serve, "users", ["not", "a", "mapping"])
+    assert await listed() == {"AAA", "BBB", "CCC"}
+    monkeypatch.setitem(config.serve, "services", ["CCC"])
+    assert await listed() == {"CCC"}
+    everything = await (await client.get("/api/dashboard/services?all=1", headers=headers)).json()
+    assert {r["tag"] for r in everything} == {"AAA", "BBB", "CCC"}
 
 
 async def test_status_reports_no_session_limit(aiohttp_client, dashboard_cfg, monkeypatch) -> None:

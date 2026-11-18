@@ -13,6 +13,14 @@ Resolution is case-insensitive: an override (`dl --cdm <name>`, or the `cdm` fie
 job) wins, then the per-service entry, then `default`. An override pins one device for the whole
 run and skips any quality or Widevine/PlayReady sub-entries.
 
+Over `--remote`, an override also makes your device license the remote session, not the server
+CDM. A per-service entry does the same when it names a device without a quality: a device name,
+a `widevine` or `playready` sub-entry, or a profile or `default` sub-entry. A per-service entry
+that selects only by quality, or only for a different profile, loads no device when the run
+starts. unshackle then shows a warning, and the server decides who licenses the remote session.
+With only the top-level `default` entry, the server CDM licenses when the API key has it. See
+[`remote_services`](services.md#remote_services).
+
 ```yaml
 cdm:
   default: chromecdm_l3
@@ -36,6 +44,28 @@ Quality keys can hold `1080`, `>=1080`, `>720`, `<=576`, `<480` style comparison
 are `widevine` / `playready`. unshackle matches the quality keys first, but only when a video
 height is known. If the value is still a dict after that, unshackle uses
 `widevine`/`playready` when present, or else the credential profile name, then `default`.
+
+When an entry holds `widevine` and `playready`, their order sets which device unshackle loads
+first. A track that offers the two DRM systems licenses with that system. A track that offers
+only the other system uses the other device. A `widevine` / `playready` dict in a quality key
+does not set the order. The server CDM of a remote session follows the same order.
+
+A quality key can also hold a dict of `widevine` / `playready` devices, and so can the
+top-level `default` entry:
+
+```yaml
+cdm:
+  default:
+    widevine: chromecdm_l3
+    playready: sl2000
+  EXAMPLE1:
+    ">=1080": { widevine: android_l1, playready: sl3000 }
+    "<1080": { widevine: chromecdm_l3, playready: sl2000 }
+```
+
+A quality key that holds one device name applies to both DRM systems. When a track needs the
+other system, unshackle uses the `widevine` / `playready` config key of the entry. `dl --all-drm`
+needs a device for each system from one of these shapes.
 
 unshackle finds the resolved name in [`remote_cdm`](#remote_cdm) by `name` first. If no entry
 matches, unshackle loads it as a local device file, in this order: `<name>.prd` in
@@ -74,6 +104,13 @@ For the two pywidevine/pyplayready backends, field names are read case-insensiti
 styles: `Device Type`/`device_type`, `System ID`/`system_id`, `Security Level`/`security_level`,
 `Host`/`host`, `Secret`/`secret`, `Device Name`/`device_name`.
 
+!!! note "Serve APIs behind a proxy"
+    unshackle does not send upstream's `HEAD` request or examine the `Server` response
+    header, so the server can operate behind a reverse proxy or a CDN that removes or
+    changes that header. Thus a `host` that is not a serve API fails at the first licence
+    request, not when unshackle loads the CDM. On a redirect to a different host or port,
+    unshackle removes the `secret` from the request.
+
 !!! warning "PlayReady `host` needs a `/playready` suffix"
     pyplayready's `RemoteCdm` treats `host` as a base URL and appends its own endpoint paths,
     so a PlayReady entry's `host` must include the trailing `/playready` segment (for example
@@ -85,7 +122,7 @@ styles: `Device Type`/`device_type`, `System ID`/`system_id`, `Security Level`/`
 | Field | Default | Notes |
 |-------|---------|-------|
 | `host` | `https://keyxtractor.decryptlabs.com` | |
-| `device_name` | `ChromeCDM` | `ChromeCDM`, `L1`, `L2` (Widevine) or `SL2`, `SL3` (PlayReady) |
+| `device_name` | `ChromeCDM` | `ChromeCDM`, `L1`, `L2`, `L3` (Widevine) or `SL2`, `SL3` (PlayReady). The host decides which of these names it serves. |
 | `secret` | from [`decrypt_labs_api_key`](misc.md#external-api-keys) | Sent as the `decrypt-labs-api-key` header. An error is raised if neither is set. |
 | `system_id` | `26830` (Widevine), `0` (PlayReady) | |
 | `security_level` | Widevine `3`; PlayReady `2000` for `SL2`, else `3000` | |

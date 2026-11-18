@@ -96,3 +96,24 @@ unshackle ASCII-art banner in the CLI, and runs `rootless_check()` *after* the b
 - No feature removed — everything degrades with a warning (`logger.warning`) and a
   user-space fallback.
 - No upstream `.service` files exist, so nothing byte-identical to preserve; launcher is additive.
+
+---
+
+## Sync to upstream 6.0.0 (Nov 2026)
+
+The fork was brought up to `unshackle-dl/unshackle` **6.0.0/`dev`** (`9693cbd3`) by
+cherry-picking all 189 upstream commits after the `6.0.0` tag onto the baseline above, one
+commit per upstream change. Every upstream-only file is byte-identical to `upstream/dev`;
+the only remaining differences are the fork's baseline plus the additions below.
+
+| Upstream change that touched the baseline | How it was resolved |
+|---|---|
+| Lazy service loading (`MODULES`, `LOAD_ERRORS`, `ensure_loaded`/`load_all` in `core/services.py`) | Adopted upstream's loader. The fork's watcher entry points `load_one()` / `ensure_all_loaded()` remain as thin wrappers, so `watch` keeps its guarantee. |
+| `Video` imported at module level in `titles/title.py` for HDR10+ naming | Kept lazy (function-level import) so a bare `watch` still skips the track/DRM stack. |
+| `type[Subtitle.Codec]` etc. in `utils/click_types.py` | Moved under `TYPE_CHECKING` with string annotations; `watch` must not import the track stack. |
+| Surfshark catalogue fetched on first query, not in `__init__` | Kept; the fork's cluster/alias/pin resolution and lenient credential handling are preserved on top of it. |
+| `Service repo` / `load_yaml` duplicate-key warnings | The fork's `load_service_config`/`check_service_config_keys` now read through `config.load_yaml`, so both behaviours hold. |
+
+`watch` guarded by `tests/core/test_watcher.py::test_watch_startup_does_not_load_the_track_or_drm_stack`.
+All fork defaults (home/downloads/temp under `~/unshackle`, `temp_max_bytes`, NFS-safe task
+locks, pid-file launcher) are unchanged and covered by the same test suite.

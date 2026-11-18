@@ -1414,7 +1414,7 @@ class dl:
 
         self.service = Services.get_tag(ctx.invoked_subcommand)
         self.vault_service = Services.get_vault_tag(self.service)
-        apply_service_dl_overrides(ctx, (ci_get(config.services, self.service) or {}).get("dl", {}), self.log)
+        apply_service_dl_overrides(ctx, (ci_get(config.services, self.service) or {}).get("dl") or {}, self.log)
 
         # Refresh locals Click bound before the overrides ran.
         no_proxy = ctx.params.get("no_proxy", no_proxy)

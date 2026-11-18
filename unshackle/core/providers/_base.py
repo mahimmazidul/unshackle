@@ -33,6 +33,7 @@ def metadata_proxy(proxy: Optional[str]) -> Iterator[None]:
     finally:
         _METADATA_PROXY.reset(token)
 
+
 STRIP_RE = re.compile(r"[^a-z0-9]+", re.I)
 YEAR_RE = re.compile(r"\s*\(?[12][0-9]{3}\)?$")
 

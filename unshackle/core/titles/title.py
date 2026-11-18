@@ -13,11 +13,11 @@ from unshackle.core.constants import (
     SPACED_AUDIO_CODECS,
     VIDEO_CODEC_MAP,
 )
-from unshackle.core.tracks import Video
 from unshackle.core.utilities import spoken_language, standard_resolution
 
 if TYPE_CHECKING:
-    # The fork builds Tracks lazily so `watch` never imports the track/DRM stack.
+    # The fork keeps the track/DRM stack out of a bare `watch` run, so it is imported
+    # lazily here (and in `tracks`) rather than at module level.
     from unshackle.core.tracks import Tracks
 
 
@@ -168,8 +168,13 @@ class Title:
                     context["hdr"] = DYNAMIC_RANGE_MAP["HDR Vivid"]
                 else:
                     context["hdr"] = DYNAMIC_RANGE_MAP.get(hdr_format, "")
-                    if context["hdr"] == "HDR" and any(v.range == Video.Range.HDR10P for v in self.tracks.videos[:1]):
-                        context["hdr"] = DYNAMIC_RANGE_MAP["HDR10+"]
+                    if context["hdr"] == "HDR":
+                        # Imported here, not at module level, so the fork's bare `watch`
+                        # run never loads the track/DRM stack.
+                        from unshackle.core.tracks.video import Video
+
+                        if any(v.range == Video.Range.HDR10P for v in self.tracks.videos[:1]):
+                            context["hdr"] = DYNAMIC_RANGE_MAP["HDR10+"]
             elif trc and "HLG" in trc:
                 context["hdr"] = "HLG"
             elif trc and "PQ" in trc:

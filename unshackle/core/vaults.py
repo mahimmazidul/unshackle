@@ -13,6 +13,7 @@ from unshackle.core.vault import UNREACHABLE, RateLimited, Vault, is_null_key
 
 log = logging.getLogger(__name__)
 
+
 def _vault_files() -> list[Path]:
     """Python files that implement vault backends.
 

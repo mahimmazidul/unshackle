@@ -30,9 +30,7 @@ def read_service_yaml(path: Path) -> dict:
     if raw is None:
         return {}
     if not isinstance(raw, dict):
-        raise click.ClickException(
-            f"Service config {path} must be a YAML mapping, not {type(raw).__name__}."
-        )
+        raise click.ClickException(f"Service config {path} must be a YAML mapping, not {type(raw).__name__}.")
     return restore_bool_languages(raw)
 
 

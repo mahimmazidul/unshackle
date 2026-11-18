@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from unshackle.core.api.input_bridge import InputBridge
     from unshackle.core.constants import AnyTrack
     from unshackle.core.drm import DRM_T
+
     # The fork keeps the track/DRM stack out of a bare `watch` startup, so these stay lazy.
     from unshackle.core.drm.cbcs import SampleDecrypter
     from unshackle.core.tracks import Chapters, Tracks

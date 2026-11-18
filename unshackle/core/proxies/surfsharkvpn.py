@@ -224,9 +224,7 @@ class SurfsharkVPN(Proxy):
         pinned_server = _hostname(mapped if not as_query else None)
         if pinned_server:
             servers = [pinned_server]
-        elif not city and any(
-            _as_str(x.get("connectionName")).split(".", 1)[0] == query for x in self.countries
-        ):
+        elif not city and any(_as_str(x.get("connectionName")).split(".", 1)[0] == query for x in self.countries):
             servers = [query]
         elif re.fullmatch(r"[a-z]{2}", query):
             wanted = {"gb": ("gb", "uk")}.get(query, (query,))

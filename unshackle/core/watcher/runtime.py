@@ -146,9 +146,7 @@ class ServiceRuntime:
             "reset_cache": False,
             "quality": _list_value(self.target.download.get("quality")),
             "vcodec": _loaded_video_enum("Codec", _list_value(self.target.download.get("vcodec"))),
-            "range_": _loaded_video_enum(
-                "Range", _list_value(self.target.download.get("range")) or ["sdr"]
-            ),
+            "range_": _loaded_video_enum("Range", _list_value(self.target.download.get("range")) or ["sdr"]),
             "best_available": bool(self.target.download.get("best_available", False)),
             "watcher": True,
         }

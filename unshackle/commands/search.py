@@ -11,10 +11,9 @@ from rich.rule import Rule
 from rich.tree import Tree
 
 from unshackle.commands.dl import dl
-from unshackle.core.config import config, load_yaml
+from unshackle.core.config import config
 from unshackle.core.console import console
 from unshackle.core.constants import context_settings
-from unshackle.core.proxies import Basic
 from unshackle.core.proxies.proxy import Proxy
 from unshackle.core.proxies.resolve import (
     REGION,
@@ -29,8 +28,6 @@ from unshackle.core.service import Service
 from unshackle.core.service_config import check_service_config_keys
 from unshackle.core.services import Services, load_service_config
 from unshackle.core.utils.click_types import ContextData
-from unshackle.core.utils.collections import ci_get, merge_dict
-from unshackle.core.utils.redact import mask_proxy
 
 
 @click.command(

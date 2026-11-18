@@ -44,7 +44,7 @@ from rich.tree import Tree
 from unshackle.core import __version__, binaries, providers
 from unshackle.core.cdm import DecryptLabsRemoteCDM
 from unshackle.core.cdm.detect import cdm_type_stub, is_playready_cdm, is_remote_cdm, is_widevine_cdm
-from unshackle.core.config import cdm_entry_names_device, config, load_yaml, resolve_cdm_name, resolve_decryption
+from unshackle.core.config import cdm_entry_names_device, config, resolve_cdm_name, resolve_decryption
 from unshackle.core.console import GradientPulseBarColumn, SyncLive, console, listing_panel, print_listing
 from unshackle.core.constants import (
     DEFAULT_SAMPLE,
@@ -724,8 +724,7 @@ class dl:
             self.log.info("Install font packages to improve subtitle rendering:")
             for package_cmd, fonts in suggestions.items():
                 self.log.info(
-                    f"  $ apt install {package_cmd}   "
-                    f"(no root? ask your seedbox admin, or drop the fonts in ~/.fonts)"
+                    f"  $ apt install {package_cmd}   (no root? ask your seedbox admin, or drop the fonts in ~/.fonts)"
                 )
                 self.log.info(f"    → Provides: {', '.join(fonts)}")
 

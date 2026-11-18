@@ -408,7 +408,9 @@ class WatcherScheduler:
                 result.append(item)
         return result
 
-    def _error_event(self, target: WatchTarget, phase: str, exc: BaseException, selector: Optional[str] = None) -> dict[str, Any]:
+    def _error_event(
+        self, target: WatchTarget, phase: str, exc: BaseException, selector: Optional[str] = None
+    ) -> dict[str, Any]:
         return {
             "event": "watcher_error",
             "watcher_id": target.id,
@@ -440,7 +442,11 @@ class WatcherScheduler:
         download_params["no_cache"] = True
         download_params["service_params"] = target.service_params
         download_params["proxy"] = runtime.resolve_download_proxy(target.download_proxy)
-        if target.download_proxy is not None and str(target.download_proxy).strip().lower() in {"direct", "none", "off"}:
+        if target.download_proxy is not None and str(target.download_proxy).strip().lower() in {
+            "direct",
+            "none",
+            "off",
+        }:
             download_params["no_proxy"] = True
         if target.mode == "latest" and not target.wanted:
             download_params["latest_episode"] = True
@@ -557,7 +563,9 @@ class WatcherScheduler:
                 return
 
             item = candidates[0]
-            selector = episode_selector(item, daily=self._daily_for(target, item)) if isinstance(item, Episode) else None
+            selector = (
+                episode_selector(item, daily=self._daily_for(target, item)) if isinstance(item, Episode) else None
+            )
             pending_key = selector or str(item.id)
             pending = state.setdefault("pending", {})
             if not isinstance(pending, dict):
@@ -574,13 +582,15 @@ class WatcherScheduler:
                     "eligible_at": eligible.isoformat(timespec="seconds"),
                     "attempts": 0,
                 }
-                state_store.event({
-                    "event": "candidate_seen",
-                    "watcher_id": target.id,
-                    "service": target.service,
-                    "selector": selector,
-                    "item_id": str(item.id),
-                })
+                state_store.event(
+                    {
+                        "event": "candidate_seen",
+                        "watcher_id": target.id,
+                        "service": target.service,
+                        "selector": selector,
+                        "item_id": str(item.id),
+                    }
+                )
                 # Persist before the trigger as well as after it. If the process is
                 # interrupted during a zero-delay download, recovery sees the pending
                 # item instead of treating it as a brand-new candidate.

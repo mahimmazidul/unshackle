@@ -9,9 +9,7 @@ from click.shell_completion import CompletionItem
 from unshackle.core.constants import DEFAULT_SAMPLE
 
 if TYPE_CHECKING:
-    from unshackle.core.tracks.audio import Audio
     from unshackle.core.tracks.subtitle import Subtitle
-    from unshackle.core.tracks.video import Video
 
 
 class VideoCodecChoice(click.Choice):
@@ -531,9 +529,7 @@ class LazyAudioCodecList(AudioCodecList):
             self._delegate = AudioCodecList(Audio.Codec)
         return self._delegate
 
-    def convert(
-        self, value: Any, param: Optional[click.Parameter] = None, ctx: Optional[click.Context] = None
-    ) -> list:
+    def convert(self, value: Any, param: Optional[click.Parameter] = None, ctx: Optional[click.Context] = None) -> list:
         return self._loaded().convert(value, param, ctx)
 
     def __getattr__(self, name: str) -> Any:
@@ -582,6 +578,8 @@ class LazySubtitleCodec(SubtitleCodecChoice):
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._loaded(), name)
+
+
 class SampleRange(click.ParamType):
     """Parses a sample window string like '60-120' into a tuple of (start, end) seconds."""
 

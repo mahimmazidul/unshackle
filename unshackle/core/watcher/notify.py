@@ -97,10 +97,10 @@ class Notifier:
                 "Unshackle watcher error",
                 f"Service: {event.get('service')}",
                 f"Title: {self._title(event)}",
-                *( [f"Episode: {event['selector']}"] if event.get("selector") else [] ),
+                *([f"Episode: {event['selector']}"] if event.get("selector") else []),
                 f"Phase: {event.get('phase', 'unknown')}",
                 f"Error: {error}",
-                *( [f"Next retry: {event['next_retry_at']}"] if event.get("next_retry_at") else [] ),
+                *([f"Next retry: {event['next_retry_at']}"] if event.get("next_retry_at") else []),
             ]
         )
         self.send(message)

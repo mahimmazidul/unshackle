@@ -150,6 +150,7 @@ def ensure_all_loaded() -> None:
     """Load every service, for a caller presenting a full inventory (the fork's name for load_all)."""
     load_all()
 
+
 PENDING: set[str] = set()
 PENDING_SINCE: dict[str, float] = {}
 LOADED_COMMITS: dict[str, str] = {}

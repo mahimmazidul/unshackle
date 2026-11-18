@@ -110,6 +110,7 @@ def main(version: bool, debug: bool) -> None:
         return
 
     if config.update_checks:
+
         def _check_for_updates() -> None:
             # Run off the main thread so a cold update-check cache (up to ~5 s of
             # network I/O) never delays startup. Prints when the result is ready.

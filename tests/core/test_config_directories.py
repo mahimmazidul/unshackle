@@ -45,7 +45,9 @@ def test_relative_code_dirs_stay_in_the_package(tmp_path: Path) -> None:
 
 
 def test_sqlite_vault_path_joins_home(tmp_path: Path) -> None:
-    cfg = Config(directories={"home": str(tmp_path)}, key_vaults=[{"type": "SQLite", "name": "Local", "path": "./key_store.db"}])
+    cfg = Config(
+        directories={"home": str(tmp_path)}, key_vaults=[{"type": "SQLite", "name": "Local", "path": "./key_store.db"}]
+    )
     assert cfg.key_vaults[0]["path"] == str(tmp_path / "key_store.db")
 
 

@@ -8,7 +8,7 @@ import unicodedata
 from datetime import datetime
 from functools import lru_cache
 from types import ModuleType
-from typing import IO, Any, Callable, Iterable, List, Literal, Mapping, Optional, Sized, TextIO, Union, cast
+from typing import IO, Any, Callable, Iterable, List, Literal, Mapping, Optional, TextIO, Union
 
 import rich.cells
 from rich import box

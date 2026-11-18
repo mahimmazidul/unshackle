@@ -246,3 +246,30 @@ def test_notifier_messages_have_no_emoji() -> None:
     assert sent and all("✅" not in message and "❌" not in message for message in sent)
     assert sent[0].startswith("Unshackle watcher download successful")
     assert sent[1].startswith("Unshackle watcher error")
+
+
+def test_watch_startup_does_not_load_the_track_or_drm_stack() -> None:
+    """The fork's baseline: a bare `watch` must not import the downloader's heavy modules.
+
+    A metadata-only watcher poll should not pay for DRM, CDM, vault, or track code, and a
+    missing optional binary in that stack must not be able to break a watch run.
+    """
+    import subprocess
+    import sys
+
+    probe = (
+        "import sys\n"
+        "sys.argv = ['unshackle', 'watch', '--help']\n"
+        "from unshackle.core.__main__ import main\n"
+        "try:\n"
+        "    main()\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "heavy = [m for m in ('unshackle.core.drm', 'unshackle.core.cdm', 'unshackle.core.tracks',\n"
+        "                     'unshackle.core.vaults', 'unshackle.core.tracks.video') if m in sys.modules]\n"
+        "print('HEAVY=' + ','.join(heavy))\n"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    heavy = result.stdout.rsplit("HEAVY=", 1)[-1].strip()
+    assert heavy == "", f"watch imported the heavy stack: {heavy}"
